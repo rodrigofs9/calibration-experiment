@@ -7,8 +7,8 @@ import itertools
 
 from scipy.sparse import coo_matrix
 import logging
-DEFAULT_USER_COL = "user_id"
-DEFAULT_ITEM_COL = "item_id"
+DEFAULT_USER_COL = "user"
+DEFAULT_ITEM_COL = "item"
 DEFAULT_RATING_COL = "rating"
 DEFAULT_LABEL_COL = "label"
 DEFAULT_TITLE_COL = "title"

@@ -69,11 +69,6 @@ def run_experiment(dataset, df):
     metrics_data = []
     all_genres = set()
 
-    dataset.train['user' + '_original'] = dataset.train['user'] # Ensure that we save the original user ids
-    dataset.train['item' + '_original'] = dataset.train['item'] # Ensure that we save the original item ids
-    dataset.train['user'] = dataset.train['user'].astype('category').cat.codes # Ensure that user ids are in [0, |U|] 
-    dataset.train['item'] = dataset.train['item'].astype('category').cat.codes # Ensure that item ids are in [0, |I|] 
-
     dataset.test['user' + '_original'] = dataset.test['user'] # Ensure that we save the original user ids
     dataset.test['item' + '_original'] = dataset.test['item'] # Ensure that we save the original item ids
     dataset.test['user'] = dataset.test['user'].astype('category').cat.codes # Ensure that user ids are in [0, |U|] 
@@ -81,9 +76,9 @@ def run_experiment(dataset, df):
 
     newDataset = dataset.items
     newDataset['item' + '_original'] = newDataset['item'] # Ensure that we save the original item ids
-    #newDataset['item'] = newDataset['item'].astype('category').cat.codes # Ensure that item ids are in [0, |I|] 
-    newDataset = newDataset.merge(dataset.train[['item', 'item_original']], on='item_original', how='left')
-    newDataset['item'] = newDataset['item_y']
+    newDataset['item'] = newDataset['item'].astype('category').cat.codes # Ensure that item ids are in [0, |I|] 
+    #newDataset = newDataset.merge(dataset.train[['item', 'item_original']], on='item_original', how='left')
+    #newDataset['item'] = newDataset['item_y']
 
     for ind in [int(fold)]:
         import time
@@ -171,14 +166,14 @@ def run_experiment(dataset, df):
         from itertools import islice
 
         f = partial(run_user_in_processing_mitigation, train, test, newDataset, users, items)
-        exp_results = exp.map(f, set(test["user"]))
-        #exp_results = exp.map(f, list(islice(test["user"], 5)))
+        #exp_results = exp.map(f, set(test["user"]))
+        exp_results = exp.map(f, list(islice(test["user"], 5)))
         exp.close()
         exp.join()
         print(f"Ending experiment. Elapsed Time: {time.time() - started}")
 
-        #print('popularity_items')
-        #print(popularity_items)
+        print('popularity_items')
+        print(popularity_items)
 
         #datasetItems = pd.DataFrame(newDataset)
 
@@ -235,7 +230,7 @@ if __name__ == '__main__':
 
     dataset = MLDataset()
     # dataset.load_local_movielens_dataset("./ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo')
+    dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo_pairwise')
 
     print("Dados Train")
     print(dataset.train.shape)

@@ -214,7 +214,7 @@ def run_experiment(dataset, df):
             metrics_data.append(metrics_df)
         
         gc.collect()
-        pd.DataFrame(metrics_data).to_csv(f"./results/yahoo_movies/pairwise_tmp.csv")
+        pd.DataFrame(metrics_data).to_csv(f"./results/yahoo_song/pairwise_tmp.csv")
     
     df = pd.concat([df, pd.DataFrame(metrics_data)])
     return df
@@ -235,7 +235,7 @@ if __name__ == '__main__':
 
     dataset = MLDataset()
     # dataset.load_local_movielens_dataset("./ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo')
+    dataset.load_local_movielens_dataset("./datasets/yahoo_song", type='yahoo_song', index='7')
 
     print("Dados Train")
     print(dataset.train.shape)
@@ -317,4 +317,4 @@ if __name__ == '__main__':
                 ]
         df.reset_index()
 
-        df.to_csv(f"./results/yahoo_movies/pairwise_{time.time()}_complete_index1.csv")
+        df.to_csv(f"./results/yahoo_song/pairwise_{time.time()}_complete_index1.csv")

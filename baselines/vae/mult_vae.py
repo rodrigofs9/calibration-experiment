@@ -14,9 +14,11 @@ import pandas as pd
 import tensorflow as tf
 from baselines.vae.sparse import AffinityMatrix
 from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import Input
 from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Dense, Input, Lambda, Dropout
+from tensorflow.python.keras.layers import Dense, Lambda, Dropout
 from tensorflow.python.keras.callbacks import ReduceLROnPlateau, Callback
+from tensorflow.python.keras.initializers import GlorotUniform, TruncatedNormal
 from tempfile import TemporaryDirectory
 from baselines.vae.vae_utils import binarize
 from baselines.vae.splitters import numpy_stratified_split
@@ -242,7 +244,7 @@ class Mult_VAE:
         drop_encoder=0.5,
         drop_decoder=0.5,
         beta=1.0,
-        annealing=True,
+        annealing=False,
         anneal_cap=1.0,
         seed=None,
         save_path=None,
@@ -322,10 +324,10 @@ class Mult_VAE:
         self.h = Dense(
             self.intermediate_dim,
             activation="tanh",
-            kernel_initializer=tf.compat.v1.keras.initializers.glorot_uniform(
+            kernel_initializer=GlorotUniform(
                 seed=self.seed
             ),
-            bias_initializer=tf.compat.v1.keras.initializers.truncated_normal(
+            bias_initializer=TruncatedNormal(
                 stddev=0.001, seed=self.seed
             ),
         )(self.dropout_encoder)
@@ -341,10 +343,10 @@ class Mult_VAE:
         self.h_decoder = Dense(
             self.intermediate_dim,
             activation="tanh",
-            kernel_initializer=tf.compat.v1.keras.initializers.glorot_uniform(
+            kernel_initializer=GlorotUniform(
                 seed=self.seed
             ),
-            bias_initializer=tf.compat.v1.keras.initializers.truncated_normal(
+            bias_initializer=TruncatedNormal(
                 stddev=0.001, seed=self.seed
             ),
         )
@@ -357,7 +359,7 @@ class Mult_VAE:
         # Training
         self.model = Model(self.x, self.x_decoded)
         self.model.compile(
-            optimizer='adam',
+            optimizer= "adam",
             loss=self._get_vae_loss,
         )
 
@@ -367,7 +369,7 @@ class Mult_VAE:
         self.neg_ll = -tf.reduce_mean(
             input_tensor=tf.reduce_sum(input_tensor=log_softmax_var * x, axis=-1)
         )
-        a = tf.keras.backend.print_tensor(self.neg_ll)  # noqa: F841
+        #a = tf.python.keras.backend.print_tensor(self.neg_ll)  # noqa: F841
         # calculate positive Kullback–Leibler divergence  divergence term
         kl_loss = K.mean(
             0.5
@@ -430,156 +432,21 @@ class Mult_VAE:
             if counter >= self.number_of_batches:
                 counter = 0
 
-    def fit(self, trainset):
-        """Fit model with the train set.
+    def fit(self, x_train, x_valid, x_val_tr, x_val_te, mapper):
+        """Fit model with the train sets and validate on the validation set.
 
         Args:
-            trainset (surprise.Trainset): The trainset object from Surprise.
+            x_train (numpy.ndarray): the click matrix for the train set.
+            x_valid (numpy.ndarray): the click matrix for the validation set.
+            x_val_tr (numpy.ndarray): the click matrix for the validation set training part.
+            x_val_te (numpy.ndarray): the click matrix for the validation set testing part.
+            mapper (object): the mapper for converting click matrix to dataframe. It can be AffinityMatrix.
         """
-        # Obtain both usercount and itemcount after filtering
-        usercount = trainset.n_users
-        itemcount = trainset.n_items
-
-        # Compute sparsity after filtering
-        sparsity = trainset.global_mean
-
-        print("After filtering, there are %d watching events from %d users and %d items (sparsity: %.3f%%)" %
-            (trainset.n_ratings, usercount, itemcount, sparsity * 100))
-
-        unique_users = trainset.all_users()
-        np.random.seed(SEED)
-        unique_users = np.random.permutation(unique_users)
-
-        # Create train/validation/test users
-        n_users = len(unique_users)
-        print("Number of unique users:", n_users)
-
-        train_users = unique_users[:(n_users - HELDOUT_USERS * 2)]
-        print("\nNumber of training users:", len(train_users))
-
-        val_users = unique_users[(n_users - HELDOUT_USERS * 2):(n_users - HELDOUT_USERS)]
-        print("\nNumber of validation users:", len(val_users))
-
-        test_users = unique_users[(n_users - HELDOUT_USERS):]
-        print("\nNumber of test users:", len(test_users))
-
-        # For training set keep only users that are in train_users list
-        train_set = [trainset.ur[user_id] for user_id in train_users if user_id in trainset.ur]
-        print("Number of training observations: ", sum(len(user_ratings) for user_ratings in train_set))
-
-        # For validation set keep only users that are in val_users list
-        val_set = [trainset.ur[user_id] for user_id in val_users]
-        print("\nNumber of validation observations: ", sum(len(user_ratings) for user_ratings in val_set))
-
-        # For test set keep only users that are in test_users list
-        test_set = [trainset.ur[user_id] for user_id in test_users]
-        print("\nNumber of test observations: ", sum(len(user_ratings) for user_ratings in test_set))
-
-        # Obtain list of unique items used in training set
-        unique_train_items = set()
-        for user_ratings in train_set:
-            unique_train_items.update(item_id for item_id, _ in user_ratings)
-        unique_train_items = sorted(unique_train_items)
-        print("Number of unique items that were rated in the training set:", len(unique_train_items))
-
-        # For validation set keep only items that were used in the training set
-        val_set = [[(item_id, rating) for item_id, rating in user_ratings if item_id in unique_train_items] for user_ratings in val_set]
-        print("Number of validation observations after filtering: ", sum(len(user_ratings) for user_ratings in val_set))
-
-        # For test set keep only items that were used in the training set
-        test_set = [[(item_id, rating) for item_id, rating in user_ratings if item_id in unique_train_items] for user_ratings in test_set]
-        print("\nNumber of test observations after filtering: ", sum(len(user_ratings) for user_ratings in test_set))
-
-        train_data = []
-        for user_id in train_users:
-            if user_id in trainset.ur:
-                user_ratings = trainset.ur[user_id]
-                for item_id, rating in user_ratings:
-                    train_data.append({'user_id': user_id, 'item_id': item_id, 'rating': rating})
-        train_df = pd.DataFrame(train_data)
-
-        val_data = []
-        for user_id in val_users:
-            if user_id in trainset.ur:
-                user_ratings = trainset.ur[user_id]
-                for item_id, rating in user_ratings:
-                    val_data.append({'user_id': user_id, 'item_id': item_id, 'rating': rating})
-        val_df = pd.DataFrame(val_data)
-
-        test_data = []
-        for user_id in test_users:
-            if user_id in trainset.ur:
-                user_ratings = trainset.ur[user_id]
-                for item_id, rating in user_ratings:
-                    test_data.append({'user_id': user_id, 'item_id': item_id, 'rating': rating})
-        test_df = pd.DataFrame(test_data)
-
-        # Instantiate the sparse matrix generation for train, validation, and test sets
-        # Use the list of unique items from the training set for all sets
-        am_train = AffinityMatrix(df=train_df, items_list=unique_train_items)
-
-        am_val = AffinityMatrix(df=val_df, items_list=unique_train_items)
-
-        am_test = AffinityMatrix(df=test_df, items_list=unique_train_items)
-
-        # Obtain the sparse matrix for train, validation, and test sets
-        train_data, _, _ = am_train.gen_affinity_matrix()
-
-        val_data, val_map_users, val_map_items = am_val.gen_affinity_matrix()
-        print(val_data.shape)
-
-        test_data, test_map_users, test_map_items = am_test.gen_affinity_matrix()
-        print(test_data.shape)
-
-        val_data_tr, val_data_te = numpy_stratified_split(val_data, ratio=0.75, seed=SEED)
-        test_data_tr, test_data_te = numpy_stratified_split(test_data, ratio=0.75, seed=SEED)
-
-        # Binarize train, validation, and test data
-        train_data = binarize(a=train_data, threshold=3.5)
-        val_data = binarize(a=val_data, threshold=3.5)
-        test_data = binarize(a=test_data, threshold=3.5)
-
-        # Binarize validation data: training part
-        val_data_tr = binarize(a=val_data_tr, threshold=3.5)
-
-        # Binarize validation data: testing part (save non-binary version in the separate object, will be used for calculating NDCG)
-        val_data_te_ratings = val_data_te.copy()
-        val_data_te = binarize(a=val_data_te, threshold=3.5)
-
-        # Binarize test data: training part
-        test_data_tr = binarize(a=test_data_tr, threshold=3.5)
-
-        # Binarize test data: testing part (save non-binary version in the separate object, will be used for calculating NDCG)
-        test_data_te_ratings = test_data_te.copy()
-        test_data_te = binarize(a=test_data_te, threshold=3.5)
-
-        # retrieve real ratings from initial dataset
-        for user_id, item_id, rating in trainset.all_ratings():
-            if (test_map_users.get(user_id) is not None) and (test_map_items.get(item_id) is not None):
-                user_new = test_map_users.get(user_id)
-                item_new = test_map_items.get(item_id)
-                test_data_te_ratings[user_new, item_new] = rating
-
-            if (val_map_users.get(user_id) is not None) and (val_map_items.get(item_id) is not None):
-                user_new = val_map_users.get(user_id)
-                item_new = val_map_items.get(item_id)
-                val_data_te_ratings[user_new, item_new] = rating
-
-        # test_data_te_ratings
-        #val_data_te_ratings = val_data_te_ratings.to_numpy()
-        #test_data_te_ratings = test_data_te_ratings.to_numpy()
-
         # initialise LossHistory used for saving loss of validation and train set per epoch
         history = LossHistory()
 
         # initialise Metrics  used for calculating NDCG@k per epoch
         # and saving the model weights with the highest NDCG@k value
-        x_train = train_data
-        x_valid = val_data
-        x_val_tr = val_data_tr
-        x_val_te = val_data_te_ratings
-        mapper = am_val
-
         metrics = Metrics(
             model=self.model,
             val_tr=x_val_tr,
@@ -599,21 +466,23 @@ class Mult_VAE:
                 self.beta, self.anneal_cap, self.total_anneal_steps
             )
 
+            print('entrou aqui')
             # fit model
             self.model.fit(
-                x=self.nn_batch_generator(x_train),
+                x=list(self.nn_batch_generator(x_train)),
                 steps_per_epoch=self.number_of_batches,
                 epochs=self.n_epochs,
-                verbose=str(1),
+                verbose=self.verbose,
                 callbacks=[metrics, history, self.reduce_lr, anneal],
                 validation_data=(x_valid, x_valid),
             )
+            print('saiu aqui')
 
             self.ls_beta = anneal.get_data()
 
         else:
             self.model.fit(
-                x=self.nn_batch_generator(x_train),
+                x=list(self.nn_batch_generator(x_train)),
                 steps_per_epoch=self.number_of_batches,
                 epochs=self.n_epochs,
                 verbose=str(1),
@@ -700,40 +569,3 @@ class Mult_VAE:
     def ndcg_per_epoch(self):
         """Returns the list of NDCG@k at each epoch."""
         return self.val_ndcg
-    
-    @staticmethod
-    def from_json(json_file_path):
-        """Instantiate Mult_VAE class from a JSON file.
-
-        Args:
-            json_file_path (str): Path to the JSON file containing the model configuration.
-        Returns:
-            Mult_VAE: An instance of Mult_VAE initialized with the values from the JSON file.
-        """
-        import json
-        import numpy as np
-
-        with open(json_file_path, "r") as json_file:
-            data = json.load(json_file)
-
-        # Extract training data
-        training_data = []
-        unique_users = set()
-        unique_items = set()
-        
-        for user_id, items in data.items():
-            unique_users.add(user_id)
-            for item in items:
-                item_id, rating = item
-                unique_items.add(item_id)
-                training_data.append([user_id, item_id, rating])
-
-        training_data = np.array(training_data)
-
-        # Get the dimensions
-        num_users = len(unique_users)
-        num_items = len(unique_items)
-
-        original_dim = num_items
-
-        return Mult_VAE(num_users, original_dim)

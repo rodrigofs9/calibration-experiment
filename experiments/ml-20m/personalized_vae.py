@@ -25,9 +25,28 @@ from surprise.prediction_algorithms.slope_one import SlopeOne
 from surprise.prediction_algorithms.matrix_factorization import SVD
 from surprise.prediction_algorithms.matrix_factorization import SVDpp
 from surprise.prediction_algorithms.matrix_factorization import NMF
+from baselines.vae.splitters import min_rating_filter_pandas
+from baselines.vae.splitters import numpy_stratified_split
+from baselines.vae.sparse import AffinityMatrix
+from baselines.vae.vae_utils import binarize
 from multiprocessing import Pool
 from functools import partial
 import numpy as np
+
+HELDOUT_USERS = 600 
+SEED = 1
+
+# top k items to recommend
+TOP_K = 10
+
+# Select MovieLens data size: 100k, 1m, 10m, or 20m
+MOVIELENS_DATA_SIZE = '1m'
+
+# Model parameters
+INTERMEDIATE_DIM = 1
+LATENT_DIM = 1
+EPOCHS = 1
+BATCH_SIZE = 1
 
 def calc_user_ratio(dataset, user_id):
     interacted_by_user = dataset.train[dataset.train['user'] == user_id]['item']
@@ -152,7 +171,11 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
         import time
         
         for model_name, model in zip(model_name_list, model_list):
-            model.fit(trainset)
+            model.fit(x_train=train_data, 
+                    x_valid=val_data, 
+                    x_val_tr=val_data_tr, 
+                    x_val_te=val_data_te_ratings, 
+                    mapper=am_val)
 
             print("MODEL FITTED, STARTING EXPERIMENT")
             started = time.time()
@@ -216,7 +239,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
             
             del model
             gc.collect()
-            pd.DataFrame(metrics_data).to_csv(f"./results/yahoo_movies/genres_tmp_{model_name}.csv")
+            pd.DataFrame(metrics_data).to_csv(f"./results/ml-20m/personalized_vae_tmp_{model_name}.csv")
     
     df = pd.concat([df, pd.DataFrame(metrics_data)])
     return df
@@ -235,42 +258,185 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    dataset = MLDataset()
+    # dataset = MLDataset()
     # dataset.load_local_movielens_dataset("./datasets/ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo')
+    # dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='vae')
 
-    print("Dados Train")
-    print(dataset.train.shape)
-    print(len(dataset.train['item'].unique().tolist()))
-    print(len(dataset.train['user'].unique().tolist()))
+    items_path = f"./datasets/ml-20m/items.csv"
+    items = pd.read_csv(items_path, sep=',')
+    items.columns = ['item', 'title', 'genres']
 
-    print("Dados Test")
-    print(dataset.test.shape)
-    print(len(dataset.test['item'].unique().tolist()))
-    print(len(dataset.test['user'].unique().tolist()))
+    #ratingsBase = pd.read_csv(f"./datasets/yahoo_movies/ratings.csv")
+    #ratingsBase.columns = ["user", "item", "rating"]
+    #ratings = ratingsBase.sample(frac=0.16, random_state=int(42))
+    ratings = pd.read_csv(f"./datasets/ml-20m/ratings.csv")
 
-    dataset = Popularity.generate_popularity_groups(dataset, subdivisions="mean", division='pareto')
+    df_preferred = ratings[ratings['rating'] > 3.5]
+    df_low_rating = ratings[ratings['rating'] <= 3.5]
 
-    if dataset is not None:
-        qnt_users = len(dataset.train['user'].unique().tolist())
-        popularity_items = {}
-        popularity_all = {}
-        for item in dataset.train['item'].unique().tolist():
-            popularity_items[item] = len(dataset.train[dataset.train['item'] == item])/qnt_users
-            popularity_all[item] = np.log2(len(dataset.train[dataset.train['item'] == item]))
+    # Keep users who clicked on at least 5 movies
+    dataset = min_rating_filter_pandas(df_preferred, min_rating=5, filter_by="user")
 
-        f = partial(calc_user_ratio, dataset)
+    # Keep movies that were clicked on by at least on 1 user
+    dataset = min_rating_filter_pandas(dataset, min_rating=1, filter_by="item")
+
+    # Obtain both usercount and itemcount after filtering
+    usercount = dataset[['user']].groupby('user', as_index = False).size()
+    itemcount = dataset[['item']].groupby('item', as_index = False).size()
+
+    # Compute sparsity after filtering
+    sparsity = 1. * dataset.shape[0] / (usercount.shape[0] * itemcount.shape[0])
+
+    print("After filtering, there are %d watching events from %d users and %d movies (sparsity: %.3f%%)" % 
+        (dataset.shape[0], usercount.shape[0], itemcount.shape[0], sparsity * 100))
+
+    ratings = dataset
+
+    items = pd.read_csv(items_path, sep=',')
+    items.columns = ['item', 'title', 'genres']   
+
+    unique_users = sorted(dataset.user.unique())
+    np.random.seed(SEED)
+    unique_users = np.random.permutation(unique_users)
+
+    # Create train/validation/test users
+    n_users = len(unique_users)
+    print("Number of unique users:", n_users)
+
+    train_users = unique_users[:(n_users - HELDOUT_USERS * 2)]
+    print("\nNumber of training users:", len(train_users))
+
+    val_users = unique_users[(n_users - HELDOUT_USERS * 2) : (n_users - HELDOUT_USERS)]
+    print("\nNumber of validation users:", len(val_users))
+
+    test_users = unique_users[(n_users - HELDOUT_USERS):]
+    print("\nNumber of test users:", len(test_users))
+
+    # For training set keep only users that are in train_users list
+    train_set = dataset.loc[dataset['user'].isin(train_users)]
+    print("Number of training observations: ", train_set.shape[0])
+
+    # For validation set keep only users that are in val_users list
+    val_set = dataset.loc[dataset['user'].isin(val_users)]
+    print("\nNumber of validation observations: ", val_set.shape[0])
+
+    # For test set keep only users that are in test_users list
+    test_set = dataset.loc[dataset['user'].isin(test_users)]
+    print("\nNumber of test observations: ", test_set.shape[0])
+
+    # Obtain list of unique movies used in training set
+    unique_train_items = pd.unique(train_set['item'])
+    print("Number of unique movies that rated in training set", unique_train_items.size)
+
+    mlDataset = MLDataset()
+    mlDataset.train = train_set
+    mlDataset.items = items
+    mlDataset.test = test_set
+
+    mlDataset = Popularity.generate_popularity_groups(mlDataset, subdivisions="mean", division='pareto')
+    qnt_users = len(train_users)
+    popularity_items = {}
+    popularity_all = {}
+    for item in unique_train_items:
+        popularity_items[item] = len(mlDataset.train[mlDataset.train['item'] == item])/qnt_users
+        popularity_all[item] = np.log2(len(mlDataset.train[mlDataset.train['item'] == item]))
+
+    # For validation set keep only movies that used in training set
+    val_set = val_set.loc[val_set['item'].isin(unique_train_items)]
+    print("Number of validation observations after filtering: ", val_set.shape[0])
+
+    # For test set keep only movies that used in training set
+    test_set = test_set.loc[test_set['item'].isin(unique_train_items)]
+    print("\nNumber of test observations after filtering: ", test_set.shape[0])
+
+    # train_set/val_set/test_set contain user - movie interactions with rating 4 or 5
+
+    # Instantiate the sparse matrix generation for train, validation and test sets
+    # use list of unique items from training set for all sets
+    am_train = AffinityMatrix(df=train_set, items_list=unique_train_items)
+    am_val = AffinityMatrix(df=val_set, items_list=unique_train_items)
+    am_test = AffinityMatrix(df=test_set, items_list=unique_train_items)
+
+    # Obtain the sparse matrix for train, validation and test sets
+    train_data, _, _ = am_train.gen_affinity_matrix()
+    print(train_data.shape)
+
+    val_data, val_map_users, val_map_items = am_val.gen_affinity_matrix()
+    print(val_data.shape)
+
+    test_data, test_map_users, test_map_items = am_test.gen_affinity_matrix()
+    print(test_data.shape)
+
+    # Split validation and test data into training and testing parts
+    val_data_tr, val_data_te = numpy_stratified_split(val_data, ratio=0.75, seed=SEED)
+    test_data_tr, test_data_te = numpy_stratified_split(test_data, ratio=0.75, seed=SEED)
+
+    # Binarize train, validation and test data
+    train_data = binarize(a=train_data, threshold=3.5)
+    val_data = binarize(a=val_data, threshold=3.5)
+    test_data = binarize(a=test_data, threshold=3.5)
+
+    # Binarize validation data: training part  
+    val_data_tr = binarize(a=val_data_tr, threshold=3.5)
+
+    # Binarize validation data: testing part (save non-binary version in the separate object, will be used for calculating NDCG)
+    val_data_te_ratings = val_data_te.copy()
+    val_data_te = binarize(a=val_data_te, threshold=3.5)
+
+    # Binarize test data: training part 
+    test_data_tr = binarize(a=test_data_tr, threshold=3.5)
+
+    # Binarize test data: testing part (save non-binary version in the separate object, will be used for calculating NDCG)
+    test_data_te_ratings = test_data_te.copy()
+    test_data_te = binarize(a=test_data_te, threshold=3.5)
+
+    # retrieve real ratings from initial dataset 
+    test_data_te_ratings=pd.DataFrame(test_data_te_ratings)
+    val_data_te_ratings=pd.DataFrame(val_data_te_ratings)
+
+    for index,i in df_low_rating.iterrows():
+        user_old= i['user'] # old value 
+        item_old=i['item'] # old value 
+
+        if (test_map_users.get(user_old) is not None)  and (test_map_items.get(item_old) is not None) :
+            user_new=test_map_users.get(user_old) # new value 
+            item_new=test_map_items.get(item_old) # new value 
+            rating=i['rating'] 
+            test_data_te_ratings.at[user_new,item_new]= rating   
+
+        if (val_map_users.get(user_old) is not None)  and (val_map_items.get(item_old) is not None) :
+            user_new=val_map_users.get(user_old) # new value 
+            item_new=val_map_items.get(item_old) # new value 
+            rating=i['rating'] 
+            val_data_te_ratings.at[user_new,item_new]= rating   
+
+    val_data_te_ratings=val_data_te_ratings.to_numpy()    
+    test_data_te_ratings=test_data_te_ratings.to_numpy()    
+    # test_data_te_ratings  
+
+    # Just checking
+    print(np.sum(val_data))
+    print(np.sum(val_data_tr))
+    print(np.sum(val_data_te))
+
+    # Just checking
+    print(np.sum(test_data))
+    print(np.sum(test_data_tr))
+    print(np.sum(test_data_te))
+
+    if mlDataset is not None:
+        f = partial(calc_user_ratio, mlDataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux = pool.map(
-            f, dataset.train['user'].unique()
+            f, train_users
         )
         pool.close()
         pool.join()
 
-        f = partial(calc_user_ratio2, dataset)
+        f = partial(calc_user_ratio2, mlDataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux2 = pool.map(
-            f, dataset.test['user'].unique()
+            f, train_users
         )
         pool.close()
         pool.join()
@@ -278,12 +444,12 @@ if __name__ == '__main__':
         ratios_division = {user : v for user, v in aux}
         ratio_mean= sum(v for user, v in aux)
 
-        ratio_mean = ratio_mean/len(dataset.train['user'].unique())
+        ratio_mean = ratio_mean/len(train_users)
 
-        f = partial(calc_user_profile, dataset)
+        f = partial(calc_user_profile, mlDataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux3 = pool.map(
-            f, dataset.test['user'].unique()
+            f, test_users
         )
         pool.close()
         pool.join()
@@ -311,41 +477,27 @@ if __name__ == '__main__':
         models = []
         models_names = []
 
-        ##################### User knn
-        # sim_options = {"name": "pearson_baseline", "user_based": True}
-        # userknn = KNNWithMeans(k=30, sim_options=sim_options)
-        # models.append(userknn)
-        # models_names.append("userknn")
-
-        # sim_options = {"name": "pearson_baseline", "user_based": False}
-        # itemknn = KNNWithMeans(k=30, sim_options=sim_options)
-        # models.append(itemknn)
-        # models_names.append("itemknn")
-
-        # SO = SlopeOne()
-        # models.append(SO)
-        # models_names.append("so")
-
         from baselines.vae.modelos import VAE
         from baselines.vae.mult_vae import Mult_VAE
         #vae = VAE("vae_ml_1.json") # ou vae_yahoo_1.json pro dataset yahoo
-        #vae = Mult_VAE.from_json("vae_yahoo_1.json")
-        #models_names.append("VAE Explicity")
-        #models.append(vae)
+        vae = Mult_VAE(n_users=train_data.shape[0], # Number of unique users in the training set
+            original_dim=train_data.shape[1], # Number of unique items in the training set
+            intermediate_dim=INTERMEDIATE_DIM,
+            latent_dim=LATENT_DIM,
+            n_epochs=EPOCHS,
+            batch_size=BATCH_SIZE,
+            k=TOP_K,
+            verbose=0,
+            seed=SEED,
+            save_path=None,
+            drop_encoder=0.5,
+            drop_decoder=0.5,
+            annealing=False, 
+        )
+        models_names.append("VAE Explicity")
+        models.append(vae)
 
-        #svd = SVD(n_epochs=20, n_factors=20, lr_all=0.05, reg_all=0.02)
-        #models.append(svd)
-        #models_names.append("SVD")
-
-        svdpp = SVDpp(n_epochs=20, n_factors=20, lr_all=0.005, reg_all=0.02)
-        models.append(svdpp)
-        models_names.append("SVDpp")
-
-        nmf = NMF(n_epochs=50, n_factors=15, reg_bu=0.06, reg_bi=0.06)
-        models.append(nmf)
-        models_names.append("NMF")
-
-        df = run_experiment(models_names, models, dataset, df, calibration_column_list=['genre'])
+        df = run_experiment(models_names, models, mlDataset, df, calibration_column_list=['personalized'])
 
         df.columns=[
                 'Model', "Fold", "Calibration Column",
@@ -356,4 +508,4 @@ if __name__ == '__main__':
                 ]
         df.reset_index()
 
-        df.to_csv(f"./results/yahoo_movies/genres_{time.time()}_complete_index1.csv")
+        df.to_csv(f"./results/ml-20m/personalized_vae_{time.time()}_complete_index1.csv")

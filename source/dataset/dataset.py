@@ -1,6 +1,13 @@
+import sys
+import os
+current = os.path.dirname(os.path.realpath(__file__))
+parent = os.path.dirname(os.path.dirname(current))
+sys.path.append(parent)
+
 import pandas as pd
 import ast
 from sklearn import preprocessing
+from baselines.vae.splitters import min_rating_filter_pandas
 from sklearn.model_selection import train_test_split
 
 class Dataset:
@@ -165,6 +172,59 @@ class Dataset:
 
             self.items = pd.read_csv(items_path, sep=',')
             self.items.columns = ['item', 'title', 'genres']
+        elif type == 'vae':
+            items_path = f"{path}/items.csv"
+
+            ratings = pd.read_csv(
+                f"{path}/ratings.csv"
+            )
+            ratings.columns = ["user", "item", "rating"]
+            df_preferred = ratings[ratings['rating'] > 3.5]
+
+            # Keep users who clicked on at least 5 movies
+            df = min_rating_filter_pandas(df_preferred, min_rating=5, filter_by="user")
+
+            # Keep movies that were clicked on by at least on 1 user
+            df = min_rating_filter_pandas(df, min_rating=1, filter_by="item")
+
+            # Obtain both usercount and itemcount after filtering
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+
+            # Compute sparsity after filtering
+            sparsity = 1. * df.shape[0] / (usercount.shape[0] * itemcount.shape[0])
+
+            print("After filtering, there are %d watching events from %d users and %d movies (sparsity: %.3f%%)" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0], sparsity * 100))
+
+            self.ratings = df
+
+            self.items = pd.read_csv(items_path, sep=',')
+            self.items.columns = ['item', 'title', 'genres']            
+        elif type == 'yahoo_pairwise':
+            ratings_path = f"{path}/ratings.csv"
+            ratings = pd.read_csv(ratings_path)
+            ratings.columns = ["user", "old_item", "rating"]
+            
+            items_path = f"{path}/items.csv"
+            items = pd.read_csv(items_path, sep=',')
+            items.columns = ['old_item', 'title', 'genres']
+            items['item'] = items['old_item'].astype('category').cat.codes
+            items['old_item'] = items['old_item'].astype('category')
+
+            ratings = ratings.merge(items[['old_item', 'item']], on='old_item', how='left')
+
+            # Dividir os dados de avaliações em conjuntos de treinamento e teste
+            train_ratings, test_ratings = train_test_split(ratings, test_size=0.3, random_state=int(index))
+
+            self.test = train_ratings
+            self.train = test_ratings
+            self.items = items
+
+            print(ratings.head())
+            print(train_ratings.head())
+            print(test_ratings.head())
+            print(items.head())
         elif type == 'yahoo2':
             items_path = f"{path}/items.csv"
 

@@ -31,7 +31,7 @@ def calculate_tradeoff_metrics(
 
     # recomended_list = recomend_results[model_name][calibration_column][tradeoff]["reranked"]
     result = Metrics.get_mean_average_calibration_error(
-        dataset.items,
+        dataset,
         trainratings,
         recomended_list,
         p_t_u_all_users=p_g_u_genre_all_users,
@@ -41,7 +41,7 @@ def calculate_tradeoff_metrics(
     print("MACE_GENRES", result)
 
     result = Metrics.get_mean_average_calibration_error(
-        dataset.items,
+        dataset,
         trainratings,
         recomended_list,
         distribution_column="popularity",
@@ -51,12 +51,12 @@ def calculate_tradeoff_metrics(
     print("MACE_POP", result)
     metrics_df.append(result)
 
-    result = Metrics.long_tail_coverage(recomended_list, dataset.items, isPairwise)
+    result = Metrics.long_tail_coverage(recomended_list, dataset, isPairwise)
     print("LTC", result)
     metrics_df.append(result)
 
     result = Metrics.get_mean_rank_miscalibration(
-        dataset.items,
+        dataset,
         trainratings,
         recomended_list,
         distribution_column="genres",
@@ -67,7 +67,7 @@ def calculate_tradeoff_metrics(
     metrics_df.append(result)
 
     result = Metrics.get_mean_rank_miscalibration(
-        dataset.items,
+        dataset,
         trainratings,
         recomended_list,
         distribution_column="popularity",
@@ -96,7 +96,7 @@ def calculate_tradeoff_metrics(
     # ## END
 
     result = Metrics.aggregate_diversity(
-        recomended_list, dataset.items, isPairwise
+        recomended_list, dataset, isPairwise
     )
     print("AGG-DIV", result)
     metrics_df.append(result)
