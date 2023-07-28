@@ -449,7 +449,7 @@ if __name__ == '__main__':
         f = partial(calc_user_profile, mlDataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux3 = pool.map(
-            f, test_users
+            f, train_users
         )
         pool.close()
         pool.join()

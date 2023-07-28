@@ -244,7 +244,7 @@ if __name__ == '__main__':
 
     dataset = MLDataset()
     # dataset.load_local_movielens_dataset("./datasets/ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/yahoo_song", type='yahoo_song', index='7')
+    dataset.load_local_movielens_dataset("./datasets/yahoo_song", type='yahoo_song_new', index='7')
 
     print("Dados Train")
     print(dataset.train.shape)
@@ -277,7 +277,7 @@ if __name__ == '__main__':
         f = partial(calc_user_ratio2, dataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux2 = pool.map(
-            f, dataset.test['user'].unique()
+            f, dataset.train['user'].unique()
         )
         pool.close()
         pool.join()
@@ -290,7 +290,7 @@ if __name__ == '__main__':
         f = partial(calc_user_profile, dataset)
         pool = Pool(multiprocessing.cpu_count()-3)
         aux3 = pool.map(
-            f, dataset.test['user'].unique()
+            f, dataset.train['user'].unique()
         )
         pool.close()
         pool.join()
@@ -319,30 +319,19 @@ if __name__ == '__main__':
         models_names = []
 
         ##################### User knn
-        # sim_options = {"name": "pearson_baseline", "user_based": True}
-        # userknn = KNNWithMeans(k=30, sim_options=sim_options)
-        # models.append(userknn)
-        # models_names.append("userknn")
+        sim_options = {"name": "pearson_baseline", "user_based": True}
+        userknn = KNNWithMeans(k=5, sim_options=sim_options)
+        models.append(userknn)
+        models_names.append("userknn")
 
-        # sim_options = {"name": "pearson_baseline", "user_based": False}
-        # itemknn = KNNWithMeans(k=30, sim_options=sim_options)
-        # models.append(itemknn)
-        # models_names.append("itemknn")
+        sim_options = {"name": "pearson_baseline", "user_based": False}
+        itemknn = KNNWithMeans(k=5, sim_options=sim_options)
+        models.append(itemknn)
+        models_names.append("itemknn")
 
-        # SO = SlopeOne()
-        # models.append(SO)
-        # models_names.append("so")
-
-        from baselines.vae.modelos import VAE
-        from baselines.vae.mult_vae import Mult_VAE
-        #vae = VAE("vae_ml_1.json") # ou vae_yahoo_1.json pro dataset yahoo
-        #vae = Mult_VAE.from_json("vae_yahoo_1.json")
-        #models_names.append("VAE Explicity")
-        #models.append(vae)
-
-        #svd = SVD(n_epochs=20, n_factors=20, lr_all=0.05, reg_all=0.02)
-        #models.append(svd)
-        #models_names.append("SVD")
+        slope = SlopeOne()
+        models.append(slope)
+        models_names.append("slopeOne")
 
         svdpp = SVDpp(n_epochs=20, n_factors=20, lr_all=0.005, reg_all=0.02)
         models.append(svdpp)
@@ -351,6 +340,17 @@ if __name__ == '__main__':
         nmf = NMF(n_epochs=50, n_factors=15, reg_bu=0.06, reg_bi=0.06)
         models.append(nmf)
         models_names.append("NMF")
+
+        #from baselines.vae.modelos import VAE
+        #from baselines.vae.mult_vae import Mult_VAE
+        #vae = VAE("vae_ml_1.json") # ou vae_yahoo_1.json pro dataset yahoo
+        #vae = Mult_VAE.from_json("vae_yahoo_1.json")
+        #models_names.append("VAE Explicity")
+        #models.append(vae)
+
+        #svd = SVD(n_epochs=20, n_factors=20, lr_all=0.05, reg_all=0.02)
+        #models.append(svd)
+        #models_names.append("SVD")
 
         df = run_experiment(models_names, models, dataset, df, calibration_column_list=['personalized'])
 

@@ -99,7 +99,7 @@ class Dataset:
         if type == 'yahoo_song':
             items_path = f"{path}/items.csv"
 
-            frac = 0.01  # Fração desejada do conjunto de dados (por exemplo, 50%)
+            frac = 0.1  # Fração desejada do conjunto de dados (por exemplo, 50%)
             original_df = pd.read_csv(
                 f"{path}/test_{index}.csv"
             )
@@ -109,8 +109,8 @@ class Dataset:
             #    f"{path}/test_{int(index) - 1}.csv"
             #)])
             original_df.columns = ["user", "item", "rating"]
-            #df_sampled = original_df.sample(frac=frac, random_state=int(index))
-            self.ratings = original_df
+            df_sampled = original_df.sample(frac=frac, random_state=int(index))
+            self.ratings = df_sampled
             self.ratings.columns = ["user", "item", "rating"]
 
             train, test = train_test_split(
@@ -156,6 +156,51 @@ class Dataset:
                   
             #self.items = df
             #self.items.columns = ['item', 'title', 'genres']
+        elif type == "yahoo_song_new":
+            ratings = pd.read_csv(f"{path}/train_0.csv")
+            ratings.columns = ["user", "item", "rating"]
+            ratings = ratings.dropna(subset=['user'])
+            ratings = ratings.dropna(subset=['item'])
+            ratings = ratings.dropna(subset=['rating'])
+
+            df_preferred = ratings[ratings['rating'] > 0.5]
+
+            # Keep users who clicked on at least 5 movies
+            df = min_rating_filter_pandas(df_preferred, min_rating=10, filter_by="user")
+
+            # Keep movies that were clicked on by at least on 1 user
+            df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
+
+            # Obtain both usercount and itemcount after filtering
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d users and %d movies" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
+            
+            self.ratings = df
+            train, test = train_test_split(
+                df, test_size=0.3, random_state=int(index)
+            )
+            self.test = test
+            self.train = train
+
+            items = pd.read_csv(f"{path}/items.csv", sep=',')
+            items.columns = ['item', 'title', 'genres', 'other'] 
+            items = items.dropna(subset=['item'])
+            items = items.dropna(subset=['title'])
+            items = items.dropna(subset=['genres'])
+            print("Before filtering, there are %d watching events" % 
+                (items.shape[0]))
+
+            df_cleaned = items.dropna(subset=['genres'])
+            df_cleaned = df_cleaned.loc[df_cleaned['genres'] != '(no genres listed)']
+            df_cleaned = df_cleaned.loc[df_cleaned['genres'] != 'Unknown']
+            df_filtered = df_cleaned[df_cleaned['item'].isin(df['item'])]
+            print("After filtering, there are %d watching events" % 
+                (df_filtered.shape[0]))
+
+            self.items = df_filtered
         elif type == 'yahoo':
             items_path = f"{path}/items.csv"
 
@@ -339,7 +384,45 @@ class Dataset:
             )
             self.test = test
             self.train = train
+        elif type == "20m-new":
+            ratings = pd.read_csv(
+                f"{path}/ratings.csv"
+            )
+            ratings.columns = ["user", "item", "rating", "timestamp"]
+            df_preferred = ratings[ratings['rating'] > 3.5]
+
+            # Keep users who clicked on at least 5 movies
+            df = min_rating_filter_pandas(df_preferred, min_rating=180, filter_by="user")
+
+            # Keep movies that were clicked on by at least on 1 user
+            df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
+
+            # Obtain both usercount and itemcount after filtering
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d users and %d movies" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
             
+            self.ratings = df
+            train, test = train_test_split(
+                df, test_size=0.3, random_state=int(index)
+            )
+            self.test = test
+            self.train = train
+
+            items = pd.read_csv(f"{path}/items.csv", sep=',')
+            items.columns = ['item', 'title', 'genres'] 
+            print("Before filtering, there are %d watching events" % 
+                (items.shape[0]))
+
+            df_cleaned = items.dropna(subset=['genres'])
+            df_cleaned = df_cleaned.loc[df_cleaned['genres'] != '(no genres listed)']
+            df_filtered = df_cleaned[df_cleaned['item'].isin(df['item'])]
+            print("After filtering, there are %d watching events" % 
+                (df_filtered.shape[0]))
+
+            self.items = df_filtered
         elif type == "20m":
             ratings = pd.read_csv(
                 f"{path}/ratings.csv"
