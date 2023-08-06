@@ -211,7 +211,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
                     None,
                     False
                 )
-                joint_tradeoffs = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+                joint_tradeoffs = [0, 0.2, 0.4, 0.6, 0.8, 1]
 
                 met_results = met.map(
                     f, joint_tradeoffs
@@ -229,7 +229,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
     return df
 
 if __name__ == '__main__':
-    indiceee = '3'
+    indiceee = '1'
 
     parser = argparse.ArgumentParser(description='Run the experiment.')
 
@@ -320,10 +320,10 @@ if __name__ == '__main__':
         models_names = []
 
         ##################### User knn
-        sim_options = {"name": "pearson_baseline", "user_based": True}
-        userknn = KNNWithMeans(k=30, sim_options=sim_options)
-        models.append(userknn)
-        models_names.append("userknn")
+        #sim_options = {"name": "pearson_baseline", "user_based": True}
+        #userknn = KNNWithMeans(k=30, sim_options=sim_options)
+        #models.append(userknn)
+        #models_names.append("userknn")
 
         sim_options = {"name": "pearson_baseline", "user_based": False}
         itemknn = KNNWithMeans(k=30, sim_options=sim_options)
