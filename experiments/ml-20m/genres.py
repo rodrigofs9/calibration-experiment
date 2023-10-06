@@ -176,6 +176,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
             )
             #from itertools import islice
             #exp_results = exp.map(f, list(islice(test["user"], 1)))
+            print(exp.map(f, set(test["user"])))
             exp_results = exp.map(f, set(test["user"]))
             exp.close()
             exp.join()

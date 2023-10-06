@@ -58,7 +58,6 @@ print(dataset.train.shape)
 print(len(dataset.train['item'].unique().tolist()))
 print(len(dataset.train['user'].unique().tolist()))
 
-
 print("Dados Test")
 print(dataset.test.shape)
 print(len(dataset.test['item'].unique().tolist()))
@@ -151,12 +150,8 @@ def calc_user_ratio(dataset, user_id):
 
 
 def calc_user_profile(dataset, user_id):
-
     interacted_by_user = dataset.train[dataset.train['user'] == user_id].sort_values(by='item', ascending=False)
     prof = interacted_by_user[interacted_by_user['rating'] > 3]['item'].tolist()[:10]
-
-
-
 
     return user_id, prof
 

@@ -209,6 +209,12 @@ class Dataset:
             )
             self.ratings.columns = ["user", "item", "rating"]
 
+            usercount = self.ratings[['user']].groupby('user', as_index = False).size()
+            itemcount = self.ratings[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d users and %d movies" % 
+                (self.ratings.shape[0], usercount.shape[0], itemcount.shape[0]))
+
             train, test = train_test_split(
                 self.ratings, test_size=0.3, random_state=int(index)
             )

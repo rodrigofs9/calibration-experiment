@@ -27,8 +27,6 @@ def calculate_tradeoff_metrics(
     metrics_df = [model_name, ind, calibration_column, tradeoff]
     recomended_list = {user_id_: datas[calibration_column][tradeoff]["reranked"][user_id_] for user_id_, datas in exp_results}
 
-    #print(recomended_list)
-
     # recomended_list = recomend_results[model_name][calibration_column][tradeoff]["reranked"]
     result = Metrics.get_mean_average_calibration_error(
         dataset.items,
