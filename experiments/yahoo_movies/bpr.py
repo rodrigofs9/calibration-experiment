@@ -141,7 +141,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
             
             del model
             gc.collect()
-            pd.DataFrame(metrics_data).to_csv(f"./results/ml-20m/bpr_tmp_{model_name}.csv")
+            pd.DataFrame(metrics_data).to_csv(f"./results/yahoo_movies/bpr_tmp_{model_name}.csv")
     
     df = pd.concat([df, pd.DataFrame(metrics_data)])
     return df
@@ -162,7 +162,8 @@ if __name__ == '__main__':
 
     dataset = MLDataset()
     # dataset.load_local_movielens_dataset("./datasets/ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/ml-20m", type="20m-new", index=indiceee)
+    #dataset.load_local_movielens_dataset("./datasets/ml-20m", type="20m-new", index=indiceee)
+    dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo')
 
     print("Dados Train")
     print(dataset.train.shape)
@@ -430,4 +431,4 @@ if __name__ == '__main__':
                 ]
         df.reset_index()
 
-        df.to_csv(f"./results/ml-20m/bpr_{time.time()}_complete_index1.csv")
+        df.to_csv(f"./results/yahoo_movies/bpr_{time.time()}_complete_index1.csv")

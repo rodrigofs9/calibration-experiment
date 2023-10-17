@@ -3,6 +3,11 @@ from tqdm import trange
 import pandas as pd
 from scipy.sparse import csr_matrix
 from source.metrics.metrics import Metrics
+import sys
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import normalize
+from itertools import islice 
+import numpy
 
 class BPR:
     """
@@ -105,15 +110,12 @@ class BPR:
         ratings.eliminate_zeros()
         return ratings, data
     
-    
     def __init__(self, learning_rate = 0.01, n_factors = 15, n_iters = 10, 
                  batch_size = 1000, reg = 0.01, seed = 1234, verbose = True,
-                 
-                 
+                                  
                  tradeoff=None, distribution_column=None, p_t_u_all_users=None, p_t_i_all_items=None,
                  dataset=None, movies_data=None, tipo='gs1', p_t_u_pop_all_users=None, p_t_i_pop_all_items=None,
                  tradeoff2 = None
-                 
                  ):
         self.tradeoff = tradeoff
         self.distribution_column = distribution_column
@@ -151,7 +153,6 @@ class BPR:
         dataset = self.dataset
         movies_data = self.movies_data
 
-
         train = pd.DataFrame(
             list(user_item_train_df.all_ratings()),
             columns=['user_id', 'item_id', 'rating']
@@ -165,8 +166,7 @@ class BPR:
         threshold = 0
         X, df = self.create_matrix(train, users_col, items_col, ratings_col, threshold)
         X
-        
-        
+                
         ratings = X
         indptr = ratings.indptr
         indices = ratings.indices
@@ -256,197 +256,207 @@ class BPR:
         # on the positive and negative item up front instead of computing
         # r_ui and r_uj separately, these two idea will speed up the operations
         # from 1:14 down to 0.36
-        
-        
-        
 
         # Calculate KL U-I
         # print("UIJ",u, i, j)
         itemsi = []
         itemsj = []
         for uu, ii, jj in zip(u, i, j):
-            KL_ui = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=[(ii, 1)],
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
-            KL_void = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=[],
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
-
-            KL_uj = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=[(jj, 1)],
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
-
-            KL_uj = -KL_uj/KL_void
-
-            KL_ui = -KL_ui/KL_void
-
-            diff = KL_ui/KL_uj
-
-
-            if self.tipo == 'gs1':
-                itemsi.append(
-                    self.item_factors[ii]*(tradeoff + KL_ui - tradeoff*KL_ui)
-                )
-            elif self.tipo == 'pgs1':
-                KL_ui_pop = Metrics.get_user_KL_divergence(
+            if uu in p_t_u_all_users:
+                KL_ui = Metrics.get_user_KL_divergence(
                     dataset, movies_data,
                     user_id=uu, recomended_items=[(ii, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
                 )
-                KL_ui_pop_void = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(ii, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-
-                KL_ui_pop = KL_ui_pop/KL_ui_pop_void
-                itemsi.append(
-                    self.item_factors[ii]*(1  + tradeoff*KL_ui + self.tradeoff2*KL_ui_pop)
-                )
-            elif self.tipo == 'ps1':
-                KL_ui_pop = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(ii, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                itemsi.append(
-                    self.item_factors[ii]*(tradeoff - (KL_ui_pop - tradeoff*KL_ui_pop))
-                )
-            elif self.tipo == 'ps2':
-                KL_ui_pop = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(ii, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_ui_pop_void = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(ii, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-
-                KL_ui_pop = KL_ui_pop/KL_ui_pop_void
-                itemsi.append(
-                    self.item_factors[ii]*(1 - tradeoff*KL_ui_pop)
-                )
-            else:
-                itemsi.append(
-                    self.item_factors[ii]*(1 - tradeoff*diff)
-                )
-
-            # Calculate KL U-J
-
-            
-
-            if self.tipo == 'gs1':
-                itemsj.append(
-                    self.item_factors[jj]*(tradeoff - (KL_uj - tradeoff*KL_uj))
-                )
-            elif self.tipo == 'pgs1':
-                KL_uj_pop = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(jj, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop_void = Metrics.get_user_KL_divergence(
+                KL_void = Metrics.get_user_KL_divergence(
                     dataset, movies_data,
                     user_id=uu, recomended_items=[],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop = KL_uj_pop/KL_uj_pop_void
-                itemsj.append(
-                    self.item_factors[jj]*(1 + tradeoff*KL_uj + self.tradeoff2*KL_uj_pop)
-                )
-            elif self.tipo == 'ps1':
-                KL_uj_pop = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(jj, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop_void = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop = KL_uj_pop/KL_uj_pop_void
-                itemsj.append(
-                    self.item_factors[jj]*(1 + tradeoff*KL_uj_pop + self.tradeoff2*KL_uj_pop)
-                )
-            elif self.tipo == 'ps2':
-                KL_uj_pop = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[(jj, 1)],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop_void = Metrics.get_user_KL_divergence(
-                    dataset, movies_data,
-                    user_id=uu, recomended_items=[],
-                    p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
-                    p_t_u_all_users=self.p_t_u_pop_all_users, 
-                    p_t_i_all_items=self.p_t_i_pop_all_items
-                )
-                KL_uj_pop = KL_uj_pop/KL_uj_pop_void
-                itemsj.append(
-                    self.item_factors[jj]*(1 - tradeoff*KL_uj_pop)
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
                 )
 
-            else:
-                itemsj.append(
-                    self.item_factors[jj]*(1)
+                KL_uj = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id=uu, recomended_items=[(jj, 1)],
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
                 )
+
+                if (KL_void != 0):
+                    KL_uj = -KL_uj/KL_void
+                    KL_ui = -KL_ui/KL_void
+                else:
+                    KL_uj = 1
+                    KL_ui = 1
+
+                if (KL_uj != 0):
+                    diff = KL_ui/KL_uj
+                else:
+                    diff = 1
+
+                if self.tipo == 'gs1':
+                    itemsi.append(
+                        self.item_factors[ii]*(tradeoff + KL_ui - tradeoff*KL_ui)
+                    )
+                elif self.tipo == 'pgs1':
+                    KL_ui_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(ii, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    KL_ui_pop_void = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(ii, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+
+                    if (KL_ui_pop_void != 0):
+                        KL_ui_pop = KL_ui_pop/KL_ui_pop_void
+                    if KL_ui is not None and self.tradeoff2 is not None and KL_ui_pop is not None:
+                        self.item_factors[ii] *= (1 + tradeoff * KL_ui + self.tradeoff2 * KL_ui_pop)
+
+                        itemsi.append(
+                            self.item_factors[ii]*(1  + tradeoff*KL_ui + self.tradeoff2*KL_ui_pop)
+                        )
+                elif self.tipo == 'ps1':
+                    KL_ui_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(ii, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    itemsi.append(
+                        self.item_factors[ii]*(tradeoff - (KL_ui_pop - tradeoff*KL_ui_pop))
+                    )
+                elif self.tipo == 'ps2':
+                    KL_ui_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(ii, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    KL_ui_pop_void = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(ii, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+
+                    if (KL_ui_pop_void != 0):
+                        KL_ui_pop = KL_ui_pop/KL_ui_pop_void
+                    itemsi.append(
+                        self.item_factors[ii]*(1 - tradeoff*KL_ui_pop)
+                    )
+                else:
+                    itemsi.append(
+                        self.item_factors[ii] * (1.0 - numpy.float64(tradeoff) * numpy.float64(diff))
+                    )
+
+                # Calculate KL U-J
+
+                if self.tipo == 'gs1':
+                    itemsj.append(
+                        self.item_factors[jj]*(tradeoff - (KL_uj - tradeoff*KL_uj))
+                    )
+                elif self.tipo == 'pgs1':
+                    KL_uj_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(jj, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    KL_uj_pop_void = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    if (KL_uj_pop_void != 0):
+                        KL_uj_pop = KL_uj_pop/KL_uj_pop_void
+                        
+                    if KL_uj is not None and self.tradeoff2 is not None and KL_uj_pop is not None:
+                        itemsj.append(
+                            self.item_factors[jj]*(1 + tradeoff*KL_uj + self.tradeoff2*KL_uj_pop)
+                        )
+                elif self.tipo == 'ps1':
+                    KL_uj_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(jj, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    KL_uj_pop_void = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    if (KL_uj_pop_void != 0):
+                        KL_uj_pop = KL_uj_pop/KL_uj_pop_void
+                    itemsj.append(
+                        self.item_factors[jj]*(1 + tradeoff*KL_uj_pop + self.tradeoff2*KL_uj_pop)
+                    )
+                elif self.tipo == 'ps2':
+                    KL_uj_pop = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[(jj, 1)],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    KL_uj_pop_void = Metrics.get_user_KL_divergence(
+                        dataset, movies_data,
+                        user_id=uu, recomended_items=[],
+                        p_g_u=self.p_t_u_pop_all_users[uu], distribution_column='popularity',
+                        p_t_u_all_users=self.p_t_u_pop_all_users, 
+                        p_t_i_all_items=self.p_t_i_pop_all_items
+                    )
+                    if (KL_uj_pop_void != 0):
+                        KL_uj_pop = KL_uj_pop/KL_uj_pop_void
+                    itemsj.append(
+                        self.item_factors[jj]*(1 - tradeoff*KL_uj_pop)
+                    )
+                else:
+                    itemsj.append(
+                        self.item_factors[jj]*(1)
+                    )
 
         itemsi = np.array(itemsi)
         itemsj = np.array(itemsj)
 
-
         # r_ui = np.diag(user_u.dot(item_i.T)) - tradeoff*KL_ui
         # r_uj = np.diag(user_u.dot(item_j.T)) - tradeoff*KL_uj
         # r_uij = r_ui - r_uj
-        r_uij = np.sum(user_u * (itemsi - itemsj), axis = 1).astype(np.float128)
-        sigmoid = np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
+        if user_u.shape == itemsi.shape and user_u.shape == itemsj.shape:
+            r_uij = np.sum(user_u * (itemsi - itemsj), axis = 1).astype(np.float128)
+            sigmoid = np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
 
-        # repeat the 1 dimension sigmoid n_factors times so
-        # the dimension will match when doing the update
-        sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
+            # repeat the 1 dimension sigmoid n_factors times so
+            # the dimension will match when doing the update
+            sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
 
-        # update using gradient descent
-        grad_u = sigmoid_tiled * (item_j - item_i) + self.reg * user_u
-        grad_i = sigmoid_tiled * -user_u + self.reg * item_i
-        grad_j = sigmoid_tiled * user_u + self.reg * item_j
-        self.user_factors[u] -= self.learning_rate * grad_u
-        self.item_factors[i] -= self.learning_rate * grad_i
-        self.item_factors[j] -= self.learning_rate * grad_j
+            # update using gradient descent
+            grad_u = sigmoid_tiled * (item_j - item_i) + self.reg * user_u
+            grad_i = sigmoid_tiled * -user_u + self.reg * item_i
+            grad_j = sigmoid_tiled * user_u + self.reg * item_j
+            self.user_factors[u] -= self.learning_rate * grad_u
+            self.item_factors[i] -= self.learning_rate * grad_i
+            self.item_factors[j] -= self.learning_rate * grad_j
         return self
 
     def predict(self):
@@ -508,7 +518,6 @@ class BPR:
         liked = set(ratings[user].indices)
         count = N + len(liked)
         if count < scores.shape[0]:
-
             # when trying to obtain the top-N indices from the score,
             # using argpartition to retrieve the top-N indices in 
             # unsorted order and then sort them will be faster than doing

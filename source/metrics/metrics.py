@@ -332,6 +332,7 @@ class Metrics:
                 movies_bins=movies_bins,
             )
 
+        if len(recomendation_list_per_user.keys()) == 0: return 0
         return MRMC / len(recomendation_list_per_user.keys())
 
     def get_miscalibration(
@@ -410,7 +411,7 @@ class Metrics:
                 movies_bins=movies_bins,
             )
 
-        for i in range(1, N):
+        for i in range(1, N+1):
             partial_recomendation = recomended_items[:i]
             RMC += Metrics.get_miscalibration(
                 trainratings,
@@ -487,7 +488,7 @@ class Metrics:
             else:
                 p_g_u = p_t_u_all_users[user_id]
 
-        for i in range(1, N):
+        for i in range(1, N+1):
             partial_recomendation = recomended_items[:i]
             ACE += Metrics.get_user_calibration_error(
                 movies,
@@ -523,6 +524,7 @@ class Metrics:
                 p_t_i_all_items=p_t_i_all_items,
             )
 
+        if len(recomendation_list_per_user.keys()) == 0: return 0
         return MACE / len(recomendation_list_per_user.keys())
 
     @staticmethod
@@ -562,7 +564,7 @@ class Metrics:
         return len(set_recommended_items) / len(all_items)
 
     @staticmethod
-    def prec(recomendations_per_user, testratings, isPairwise, n=10):
+    def prec(recomendations_per_user, testratings, isPairwise=False, n=10):
         n_relev = 0
         n_ = 0
         for user in recomendations_per_user:
@@ -661,9 +663,7 @@ class Metrics:
 
     @staticmethod
     def ap_at(testratings, user_id, recommendation_list, isPairwise=False, N=10):
-
         AP = 0
-
 
         for k in range(N):
             # if Metrics.item_is_relevant(testratings, user_id, recommendation_list[k][0]):

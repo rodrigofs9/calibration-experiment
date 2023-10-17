@@ -171,6 +171,19 @@ class Dataset:
             # Keep movies that were clicked on by at least on 1 user
             df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
 
+            unique_users = df['user'].unique()
+            user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+
+            unique_items = df['item'].unique()
+            item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
+
+            # Aplique o mapeamento para criar a coluna 'user' sequencial
+            df['old_user'] = df['user']
+            df['user'] = df['old_user'].map(user_mapping)
+
+            df['old_item'] = df['item']
+            df['item'] = df['old_item'].map(item_mapping)
+
             # Obtain both usercount and itemcount after filtering
             usercount = df[['user']].groupby('user', as_index = False).size()
             itemcount = df[['item']].groupby('item', as_index = False).size()
@@ -208,6 +221,19 @@ class Dataset:
                 f"{path}/ratings.csv"
             )
             self.ratings.columns = ["user", "item", "rating"]
+
+            unique_users = df['user'].unique()
+            user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+
+            unique_items = df['item'].unique()
+            item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
+
+            # Aplique o mapeamento para criar a coluna 'user' sequencial
+            df['old_user'] = df['user']
+            df['user'] = df['old_user'].map(user_mapping)
+
+            df['old_item'] = df['item']
+            df['item'] = df['old_item'].map(item_mapping)
 
             usercount = self.ratings[['user']].groupby('user', as_index = False).size()
             itemcount = self.ratings[['item']].groupby('item', as_index = False).size()
@@ -402,6 +428,19 @@ class Dataset:
 
             # Keep movies that were clicked on by at least on 1 user
             df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
+
+            unique_users = df['user'].unique()
+            user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+
+            unique_items = df['item'].unique()
+            item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
+
+            # Aplique o mapeamento para criar a coluna 'user' sequencial
+            df['old_user'] = df['user']
+            df['user'] = df['old_user'].map(user_mapping)
+
+            df['old_item'] = df['item']
+            df['item'] = df['old_item'].map(item_mapping)
 
             # Obtain both usercount and itemcount after filtering
             usercount = df[['user']].groupby('user', as_index = False).size()

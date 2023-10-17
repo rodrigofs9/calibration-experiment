@@ -2,6 +2,10 @@ import numpy as np
 from tqdm import trange
 import pandas as pd
 from scipy.sparse import csr_matrix
+import sys
+from itertools import islice 
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import normalize
 
 class BPR:
     """
@@ -90,10 +94,10 @@ class BPR:
         # train and test split in downstream process, note we might purge
         # some users completely during this process
         data_user_num_items = (data
-                             .groupby('user_id')
-                             .agg(**{'num_items': ('item_id', 'count')})
+                             .groupby('user')
+                             .agg(**{'num_items': ('item', 'count')})
                              .reset_index())
-        data = data.merge(data_user_num_items, on='user_id', how='inner')
+        data = data.merge(data_user_num_items, on='user', how='inner')
         data = data[data['num_items'] > 1]
 
         for col in (items_col, users_col, ratings_col):
@@ -119,27 +123,25 @@ class BPR:
         self._prediction = None
         
     def test(self, data):
-        user_id = int(data[0][0])
+        user = int(data[0][0])
 
-        pred = [i for i in self._predict_user(user_id)]
+        pred = [i for i in self._predict_user(user)]
 
         return list(enumerate(pred))
         
     def fit(self, user_item_train_df):
         train = pd.DataFrame(
             list(user_item_train_df.all_ratings()),
-            columns=['user_id', 'item_id', 'rating']
+            columns=['user', 'item', 'rating']
         )
         
         from scipy.sparse import csr_matrix
 
-        items_col = 'item_id'
-        users_col = 'user_id'
+        items_col = 'item'
+        users_col = 'user'
         ratings_col = 'rating'
         threshold = 0
         X, df = self.create_matrix(train, users_col, items_col, ratings_col, threshold)
-        X
-        
         
         ratings = X
         indptr = ratings.indptr

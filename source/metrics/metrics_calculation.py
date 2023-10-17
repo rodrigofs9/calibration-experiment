@@ -25,9 +25,16 @@ def calculate_tradeoff_metrics(
     tradeoff=None
 ):
     metrics_df = [model_name, ind, calibration_column, tradeoff]
-    recomended_list = {user_id_: datas[calibration_column][tradeoff]["reranked"][user_id_] for user_id_, datas in exp_results}
+    
+    filtered_exp_results = [item for item in exp_results if item is not None]
+    recomended_list = {}
+    try:
+        recomended_list = {user_id_: datas[calibration_column][tradeoff]["reranked"][user_id_] for user_id_, datas in filtered_exp_results}  
+    except Exception as e:
+        print(f"An exception occurred: {e}")
 
     # recomended_list = recomend_results[model_name][calibration_column][tradeoff]["reranked"]
+
     result = Metrics.get_mean_average_calibration_error(
         dataset.items,
         trainratings,

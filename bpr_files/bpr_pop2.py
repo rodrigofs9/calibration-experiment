@@ -5,6 +5,10 @@ from scipy.sparse import csr_matrix
 from source.metrics.metrics import Metrics
 from scipy.spatial.distance import jensenshannon
 from scipy import spatial
+import sys
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import normalize
+from itertools import islice 
 
 from tensorboardX import SummaryWriter
 import math
@@ -96,10 +100,10 @@ class BPR:
         # train and test split in downstream process, note we might purge
         # some users completely during this process
         data_user_num_items = (data
-                             .groupby('user_id')
-                             .agg(**{'num_items': ('item_id', 'count')})
+                             .groupby('user')
+                             .agg(**{'num_items': ('item', 'count')})
                              .reset_index())
-        data = data.merge(data_user_num_items, on='user_id', how='inner')
+        data = data.merge(data_user_num_items, on='user', how='inner')
         data = data[data['num_items'] > 1]
 
         for col in (items_col, users_col, ratings_col):
@@ -109,7 +113,6 @@ class BPR:
                               (data[users_col].cat.codes, data[items_col].cat.codes)))
         ratings.eliminate_zeros()
         return ratings, data
-    
     
     def __init__(self, learning_rate = 0.01, n_factors = 15, n_iters = 10, 
                  batch_size = 1000, reg = 0.01, seed = 1234, verbose = True,
@@ -160,21 +163,19 @@ class BPR:
         dataset = self.dataset
         movies_data = self.movies_data
 
-
         train = pd.DataFrame(
             list(user_item_train_df.all_ratings()),
-            columns=['user_id', 'item_id', 'rating']
+            columns=['user', 'item', 'rating']
         )
         
         from scipy.sparse import csr_matrix
 
-        items_col = 'item_id'
-        users_col = 'user_id'
+        items_col = 'item'
+        users_col = 'user'
         ratings_col = 'rating'
         threshold = 0
         X, df = self.create_matrix(train, users_col, items_col, ratings_col, threshold)
         X
-        
         
         ratings = X
         indptr = ratings.indptr
@@ -253,77 +254,80 @@ class BPR:
             preds = sorted(preds, key=lambda x: x[1], reverse=True)
             preds = preds[:10]
 
-            KL_ui = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=preds,
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
+            if uu in p_t_u_all_users:
+                KL_ui = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id=uu, recomended_items=preds,
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
+                )
 
-            KL_void = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=[],
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
+                KL_void = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id=uu, recomended_items=[],
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
+                )
 
-            # r_uij = np.sum(self.user_factors[uu] * (itemsi - itemsj)).astype(np.float128)
-            # r_uij = (div_ui - div_uj).astype(np.float128)
-            r_uij = (1-(KL_ui/KL_void))#*5
-            sigmoid = r_uij#np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
-            m+=sigmoid
-            print("KL", KL_ui, KL_void)
-            print("RR", r_uij)
-            print("sigmoid", sigmoid)
-            if math.isnan(sigmoid):
-                print("Predictions: ", preds)
-                input()
-            
-            # sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
-            for iii, _ in preds:
-                itemsi = self.item_factors[iii]
-                itemsj = self.item_factors[jj]
-                grad_u = sigmoid * (itemsi - itemsj) + self.reg * self.user_factors[uu]
-                grad_i = sigmoid * self.user_factors[uu] + self.reg * self.item_factors[iii]
-                self.user_factors[uu] += self.learning_rate/5 * grad_u
-                self.item_factors[iii] += self.learning_rate/5 * grad_i
+                # r_uij = np.sum(self.user_factors[uu] * (itemsi - itemsj)).astype(np.float128)
+                # r_uij = (div_ui - div_uj).astype(np.float128)
+                if KL_void != 0:
+                    r_uij = (1-(KL_ui/KL_void))#*5
+                else:
+                    r_uij = 0
+                sigmoid = r_uij#np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
+                m+=sigmoid
+                #print("KL", KL_ui, KL_void)
+                #print("RR", r_uij)
+                #print("sigmoid", sigmoid)
+                #if math.isnan(sigmoid):
+                    #print("Predictions: ", preds)
+                    #input()
+                
+                # sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
+                for iii, _ in preds:
+                    itemsi = self.item_factors[iii]
+                    itemsj = self.item_factors[jj]
+                    grad_u = sigmoid * (itemsi - itemsj) + self.reg * self.user_factors[uu]
+                    grad_i = sigmoid * self.user_factors[uu] + self.reg * self.item_factors[iii]
+                    self.user_factors[uu] += self.learning_rate/5 * grad_u
+                    self.item_factors[iii] += self.learning_rate/5 * grad_i
         self.count += 1
         m = m/len(u)
         self.writer.add_scalar('MC/update2', m, self.count)
         return self
-
                 
     def _update(self, u, i, j, tradeoff, distribution_column, p_t_u_all_users, p_t_i_all_items, dataset, movies_data):
         """
         update according to the bootstrapped user u, 
         positive item i and negative item j
         """
-
-        
         m = 0
         for uu, ii, jj in zip(u, i, j):
             preds = list(enumerate(self.user_factors[uu] @ self.item_factors.T))
             preds = sorted(preds, key=lambda x: x[1], reverse=True)
             preds = preds[:10]
 
-            KL_ui = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=preds,
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
+            if uu in p_t_u_all_users:
+                KL_ui = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id=uu, recomended_items=preds,
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
+                )
 
-            KL_void = Metrics.get_user_KL_divergence(
-                dataset, movies_data,
-                user_id=uu, recomended_items=[],
-                p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
-                p_t_u_all_users=p_t_u_all_users, 
-                p_t_i_all_items=p_t_i_all_items
-            )
-            m += (1-(KL_ui/KL_void))
+                KL_void = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id=uu, recomended_items=[],
+                    p_g_u=p_t_u_all_users[uu], distribution_column=distribution_column,
+                    p_t_u_all_users=p_t_u_all_users, 
+                    p_t_i_all_items=p_t_i_all_items
+                )
+                if KL_void != 0: 
+                    m += (1-(KL_ui/KL_void))
         m = m/len(u)
         self.count2 += 1
         self.writer.add_scalar('MC/update1', m, self.count2)

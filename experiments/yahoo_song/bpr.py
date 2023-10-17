@@ -15,26 +15,26 @@ from source.rerank.mmr import re_rank_list
 from source.rerank.rerank_algo import run_user_bpr
 from source.metrics.metrics import Metrics
 import pandas as pd
+import os
 import argparse
 import time
 from tqdm import tqdm
 import multiprocessing
+import json
 import gc
 from surprise.prediction_algorithms.knns import KNNWithMeans
 from surprise.prediction_algorithms.slope_one import SlopeOne
 from surprise.prediction_algorithms.matrix_factorization import SVD
 from surprise.prediction_algorithms.matrix_factorization import SVDpp
 from surprise.prediction_algorithms.matrix_factorization import NMF
+import ast
 from multiprocessing import Pool
 from functools import partial
+import traceback
 import numpy as np
-# from bpr_pop2_sample import BPR
 from bpr_files.bpr_pop import BPR as BPR_ideias
 from bpr_files.bpr_pop2 import BPR as BPR_ideia1
-# from bpr_pop3 import BPR as BPR_genre_jensenshannon
 from bpr_files.bpr import BPR as BPR_classic
-import random
-import numpy as np
 
 def calc_user_ratio(dataset, user_id):
     interacted_by_user = dataset.train[dataset.train['user'] == user_id]['item']
@@ -67,177 +67,20 @@ def calc_user_ratio2(dataset, user_id):
 
     return BB_group, N_group, D_group
 
+# with open("./data/ml-1m/ratios.json") as f:
+#     ratios_division = json.loads(f.read())
+
 def run_experiment(model_name_list, model_list, dataset, df, calibration_column_list=["genres"]):
     metrics_data = []
+    all_genres = set()
+
+    for i in dataset.items['genres']:
+        for genre in i.split("|"):
+            all_genres.add(genre)
+    print(all_genres)
 
     for ind in [int(indiceee)]:
-        recomended_list = {}
-
         import time
-        
-        for model_name, model in zip(model_name_list, model_list):
-            model.fit(trainset)
-
-            print("MODEL FITTED, STARTING EXPERIMENT")
-            started = time.time()
-            exp = Pool(4)
-
-            f = partial(
-                run_user_bpr, train, dataset,
-                calibration_column_list,
-                model,
-                trainratings,
-                p_g_u_genre_all_users,
-                p_g_u_all_users,
-                p_t_i_genre_all_items,
-                p_t_i_all_items,
-                var_genre_all_users,
-                cg_genre_all_users,
-                var_all_users,
-                cg_all_users,
-                ratios_division,
-                ratio_mean,
-                'kl'
-            )
-            #from itertools import islice
-            #exp_results = exp.map(f, list(islice(test["user"], 1)))
-            exp_results = exp.map(f, set(test["user"]))
-            exp.close()
-            exp.join()
-            print(f"Ending experiment. Elapsed Time: {time.time() - started}")
-
-            for calibration_column in calibration_column_list:
-                met = Pool(7)
-                f = partial(
-                    calculate_tradeoff_metrics,
-                    model_name, ind,
-                    calibration_column,
-                    p_g_u_genre_all_users,
-                    p_t_i_genre_all_items,
-                    dataset,
-                    trainratings,
-                    p_g_u_all_users,
-                    p_t_i_all_items,
-                    test,
-                    exp_results,
-                    BB_group, N_group, D_group,
-                    popularity_items,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    False
-                )
-                joint_tradeoffs = [0]
-
-                met_results = met.map(
-                    f, joint_tradeoffs
-                )
-                met.close()
-                met.join()
-                for metrics_df in met_results:
-                    metrics_data.append(metrics_df)
-            
-            del model
-            gc.collect()
-            pd.DataFrame(metrics_data).to_csv(f"./results/ml-20m/bpr_tmp_{model_name}.csv")
-    
-    df = pd.concat([df, pd.DataFrame(metrics_data)])
-    return df
-
-if __name__ == '__main__':
-    indiceee = '1'
-
-    parser = argparse.ArgumentParser(description='Run the experiment.')
-
-    parser.add_argument(
-        '--name',
-        type=str,
-        help='Name of the experiment',
-        default=str(time.time())
-    )
-
-    args = parser.parse_args()
-
-    dataset = MLDataset()
-    # dataset.load_local_movielens_dataset("./datasets/ml-20m", type="ml20m_splitted", index=indiceee)
-    dataset.load_local_movielens_dataset("./datasets/ml-20m", type="20m-new", index=indiceee)
-
-    print("Dados Train")
-    print(dataset.train.shape)
-    print(len(dataset.train['item'].unique().tolist()))
-    print(len(dataset.train['user'].unique().tolist()))
-
-    print("Dados Test")
-    print(dataset.test.shape)
-    print(len(dataset.test['item'].unique().tolist()))
-    print(len(dataset.test['user'].unique().tolist()))
-
-    dataset = Popularity.generate_popularity_groups(dataset, subdivisions="mean", division='pareto')
-
-    if dataset is not None:
-        qnt_users = len(dataset.train['user'].unique().tolist())
-        popularity_items = {}
-        popularity_all = {}
-        for item in dataset.train['item'].unique().tolist():
-            popularity_items[item] = len(dataset.train[dataset.train['item'] == item])/qnt_users
-            popularity_all[item] = np.log2(len(dataset.train[dataset.train['item'] == item]))
-
-        f = partial(calc_user_ratio, dataset)
-        pool = Pool(multiprocessing.cpu_count()-3)
-        aux = pool.map(
-            f, dataset.train['user'].unique()
-        )
-        pool.close()
-        pool.join()
-
-        f = partial(calc_user_ratio2, dataset)
-        pool = Pool(multiprocessing.cpu_count()-3)
-        aux2 = pool.map(
-            f, dataset.train['user'].unique()
-        )
-        pool.close()
-        pool.join()
-
-        ratios_division = {user : v for user, v in aux}
-        ratio_mean= sum(v for user, v in aux)
-
-        ratio_mean = ratio_mean/len(dataset.train['user'].unique())
-
-        f = partial(calc_user_profile, dataset)
-        pool = Pool(multiprocessing.cpu_count()-3)
-        aux3 = pool.map(
-            f, dataset.train['user'].unique()
-        )
-        pool.close()
-        pool.join()
-
-        profiles = {user : v for user, v in aux3}
-
-        BB_group = []
-        N_group = []
-        D_group = []
-
-        for BB, N, D in aux2:
-            if len(BB) > 0:
-                BB_group.append(BB[0])
-            if len(N) > 0:
-                N_group.append(N[0])
-            if len(D) > 0:
-                D_group.append(D[0])
-
-        print("LEN BB", len(BB_group))
-        print("LEN N", len(N_group))
-        print("LEN D", len(D_group))
-
-        all_genres = set()
-
-        for i in dataset.items['genres']:
-            for genre in i.split("|"):
-                all_genres.add(genre)
-        print(all_genres)
-
         train = dataset.train
         test = dataset.test
         reader = Reader()
@@ -310,19 +153,16 @@ if __name__ == '__main__':
         var_all_users = {user_id_: result_async for user_id_, result_async in tqdm(var_queue)}
         cg_genre_all_users = {user_id_: result_async for user_id_, result_async in tqdm(cg_genre_queue)}
         var_genre_all_users = {user_id_: result_async for user_id_, result_async in tqdm(var_genre_queue)}
+        print(f"Ending users custom tradeoffs. Elapsed Time: {time.time() - started}")
+        
         testratings = test
         trainratings = train
+        recomended_list = {}
+        tradeoff_list = []
 
-        df = pd.DataFrame([])
+        import time
 
-        models = []
-        models_names = []
-
-        np.random.seed(42)
-        random.seed(42)
-
-        tipo = 'gs2'
-        for i in [0, 0.25, 0.5, 0.75, 1]:
+        for tradeoff in [0.0, 0.25, 0.5, 0.75, 1.0]:
             # Criação do BPR Classico
             bpr_params = {
                 'reg': 0.0001,
@@ -332,8 +172,8 @@ if __name__ == '__main__':
                 'batch_size': 32,
             }
             bpr = BPR_classic(**bpr_params)
-            models_names.append(f"BPR Classic")
-            models.append(bpr)
+            model_name_list.append(f"BPR Classic")
+            model_list.append(bpr)
 
             # Criação do BPR ideia 2
             bpr_params = {
@@ -342,7 +182,7 @@ if __name__ == '__main__':
                 'n_iters': 50,
                 'n_factors': 15,
                 'batch_size': 32,
-                'tradeoff': i,
+                'tradeoff': tradeoff,
                 'distribution_column': 'genre',
                 'p_t_u_all_users': p_g_u_genre_all_users,
                 'p_t_i_all_items': p_t_i_genre_all_items,
@@ -353,8 +193,8 @@ if __name__ == '__main__':
                 'tipo': 'gs1'
             }
             bpr = BPR_ideias(**bpr_params)
-            models_names.append(f"BPR-Genre | Ideia 2 ")
-            models.append(bpr)
+            model_name_list.append(f"BPR-Genre | Ideia 2 ")
+            model_list.append(bpr)
 
             # Criação do BPR ideia 3
             bpr_params = {
@@ -363,7 +203,7 @@ if __name__ == '__main__':
                 'n_iters': 50,
                 'n_factors': 15,
                 'batch_size': 32,
-                'tradeoff': i,
+                'tradeoff': tradeoff,
                 'distribution_column': 'genre',
                 'p_t_u_all_users': p_g_u_genre_all_users,
                 'p_t_i_all_items': p_t_i_genre_all_items,
@@ -374,8 +214,8 @@ if __name__ == '__main__':
                 'tipo': 'pgs1'
             }
             bpr = BPR_ideias(**bpr_params)
-            models_names.append(f"BPR-Genre | Ideia 3 ")
-            models.append(bpr)
+            model_name_list.append(f"BPR-Genre | Ideia 3 ")
+            model_list.append(bpr)
 
             # Criação do BPR ideia 4
             bpr_params = {
@@ -384,7 +224,7 @@ if __name__ == '__main__':
                 'n_iters': 50,
                 'n_factors': 15,
                 'batch_size': 32,
-                'tradeoff': i,
+                'tradeoff': tradeoff,
                 'distribution_column': 'genre',
                 'p_t_u_all_users': p_g_u_genre_all_users,
                 'p_t_i_all_items': p_t_i_genre_all_items,
@@ -395,8 +235,8 @@ if __name__ == '__main__':
                 'tipo': 'ps2'
             }
             bpr = BPR_ideias(**bpr_params)
-            models_names.append(f"BPR-Genre | Ideia 4 ")
-            models.append(bpr)
+            model_name_list.append(f"BPR-Genre | Ideia 4 ")
+            model_list.append(bpr)
 
             # Criação do BPR ideia 5
             bpr_params = {
@@ -405,7 +245,7 @@ if __name__ == '__main__':
                 'n_iters': 50,
                 'n_factors': 15,
                 'batch_size': 32,
-                'tradeoff': i,
+                'tradeoff': tradeoff,
                 'distribution_column': 'genre',
                 'p_t_u_all_users': p_g_u_genre_all_users,
                 'p_t_i_all_items': p_t_i_genre_all_items,
@@ -416,10 +256,172 @@ if __name__ == '__main__':
                 'tipo': 'diff'
             }
             bpr = BPR_ideias(**bpr_params)
-            models_names.append(f"BPR-Genre | Ideia 5 ")
-            models.append(bpr)
+            model_name_list.append(f"BPR-Genre | Ideia 5 ")
+            model_list.append(bpr)
+        
+        for model_name, model in zip(model_name_list, model_list):
+            model.fit(trainset)
+            
+            print("MODEL FITTED, STARTING EXPERIMENT")
+            started = time.time()
+            exp = Pool(4)
+            f = partial(
+                run_user_bpr, train, dataset,
+                calibration_column_list,
+                model,
+                trainratings,
+                p_g_u_genre_all_users,
+                p_g_u_all_users,
+                p_t_i_genre_all_items,
+                p_t_i_all_items,
+                var_genre_all_users,
+                cg_genre_all_users,
+                var_all_users,
+                cg_all_users,
+                ratios_division,
+                ratio_mean,
+                'kl'
+            )
+            print(f"Starting map. Elapsed Time: {time.time() - started}")
+            exp_results = exp.map(
+                f, set(test["user"])
+            )
+            exp.close()
+            exp.join()
+            print(f"Ending experiment. Elapsed Time: {time.time() - started}")
+            
+            for calibration_column in calibration_column_list:
+                met = Pool(7)
+                f = partial(
+                    calculate_tradeoff_metrics,
+                    model_name, ind,
+                    calibration_column,
+                    p_g_u_genre_all_users,
+                    p_t_i_genre_all_items,
+                    dataset,
+                    trainratings,
+                    p_g_u_all_users,
+                    p_t_i_all_items,
+                    test,
+                    exp_results,
+                    BB_group, N_group, D_group,
+                    popularity_items,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    False
+                )
+                joint_tradeoffs = [0.0]
 
-        df = run_experiment(models_names, models, dataset, df, calibration_column_list=['top10'])
+                met_results = met.map(
+                    f, joint_tradeoffs
+                )
+                met.close()
+                met.join()
+                for metrics_df in met_results:
+                    metrics_data.append(metrics_df)
+            
+            del model
+            gc.collect()
+            pd.DataFrame(metrics_data).to_csv(f"./results/yahoo_song/bpr_tmp_{model_name}.csv")
+    
+    df = pd.concat([df, pd.DataFrame(metrics_data)])
+    return df
+
+if __name__ == '__main__':
+    indiceee = 3
+
+    parser = argparse.ArgumentParser(description='Run the experiment.')
+
+    parser.add_argument(
+        '--name',
+        type=str,
+        help='Name of the experiment',
+        default=str(time.time())
+    )
+
+    args = parser.parse_args()
+
+    dataset = MLDataset()
+    # dataset.load_local_movielens_dataset("./datasets/ml-20m", type="ml20m_splitted", index=indiceee)
+    #dataset.load_local_movielens_dataset("./datasets/yahoo_movies", type='yahoo')
+    dataset.load_local_movielens_dataset("./datasets/yahoo_song", type='yahoo_song_new', index='7')
+
+    print("Dados Train")
+    print(dataset.train.shape)
+    print(len(dataset.train['item'].unique().tolist()))
+    print(len(dataset.train['user'].unique().tolist()))
+
+    print("Dados Test")
+    print(dataset.test.shape)
+    print(len(dataset.test['item'].unique().tolist()))
+    print(len(dataset.test['user'].unique().tolist()))
+
+    dataset = Popularity.generate_popularity_groups(dataset, subdivisions="mean", division='pareto')
+
+    if dataset is not None:
+        qnt_users = len(dataset.train['user'].unique().tolist())
+        popularity_items = {}
+        popularity_all = {}
+        for item in dataset.train['item'].unique().tolist():
+            popularity_items[item] = len(dataset.train[dataset.train['item'] == item])/qnt_users
+            popularity_all[item] = np.log2(len(dataset.train[dataset.train['item'] == item]))
+
+        f = partial(calc_user_ratio, dataset)
+        pool = Pool(multiprocessing.cpu_count()-3)
+        aux = pool.map(
+            f, dataset.train['user'].unique()
+        )
+        pool.close()
+        pool.join()
+
+        f = partial(calc_user_ratio2, dataset)
+        pool = Pool(multiprocessing.cpu_count()-3)
+        aux2 = pool.map(
+            f, dataset.train['user'].unique()
+        )
+        pool.close()
+        pool.join()
+
+        ratios_division = {user : v for user, v in aux}
+        ratio_mean= sum(v for user, v in aux)
+
+        ratio_mean = ratio_mean/len(dataset.train['user'].unique())
+
+        f = partial(calc_user_profile, dataset)
+        pool = Pool(multiprocessing.cpu_count()-3)
+        aux3 = pool.map(
+            f, dataset.train['user'].unique()
+        )
+        pool.close()
+        pool.join()
+
+        profiles = {user : v for user, v in aux3}
+
+        BB_group = []
+        N_group = []
+        D_group = []
+
+        for BB, N, D in aux2:
+            if len(BB) > 0:
+                BB_group.append(BB[0])
+            if len(N) > 0:
+                N_group.append(N[0])
+            if len(D) > 0:
+                D_group.append(D[0])
+
+        print("LEN BB", len(BB_group))
+        print("LEN N", len(N_group))
+        print("LEN D", len(D_group))
+
+        df = pd.DataFrame([])
+
+        model_list = []
+        model_name_list = []
+
+        df = run_experiment(model_name_list, model_list, dataset, df, calibration_column_list=['top10'])
 
         df.columns=[
                 'Model', "Fold", "Calibration Column",
@@ -430,4 +432,4 @@ if __name__ == '__main__':
                 ]
         df.reset_index()
 
-        df.to_csv(f"./results/ml-20m/bpr_{time.time()}_complete_index1.csv")
+        df.to_csv(f"./results/yahoo_song/bpr_{time.time()}_complete_index.csv")

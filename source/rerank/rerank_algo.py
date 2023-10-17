@@ -89,6 +89,7 @@ def run_user_biasmitigation(train, dataset,model, popularity_all,user):
         recomend_results['popbiasmitigation'][alpha]["reranked"][user] = rec_list[:10]
 
     scores = {}
+    users__ = []
     for user_id in set(users__):
         scores[user_id] = recomend_results
 
@@ -138,7 +139,6 @@ def run_user(
             .build_testset()
         )
         predictions = model.test(testset)
-
         #aux_3 = sorted(
         #    [
         #        (pred[0], pred[1])
@@ -156,7 +156,7 @@ def run_user(
                     ],
                     key=lambda x: x[1],
                     reverse=True,
-                )
+        )
 
         recomended_user = aux_3
 
@@ -300,6 +300,287 @@ def run_user(
     except Exception as e:
             print("An error occurred in run_user:")
             print(e)
+
+def run_user_bpr(
+    train, dataset,
+    calibration_column_list,
+    model,
+    trainratings,
+    p_g_u_genre_all_users,
+    p_g_u_all_users,
+    p_t_i_genre_all_items,
+    p_t_i_all_items,
+    var_genre_all_users,
+    cg_genre_all_users,
+    var_all_users,
+    cg_all_users,
+    ratios_division,
+    ratio_mean,
+    calibration_type,
+    user
+):
+    try:
+        recomend_results = {
+            'top10': {
+                0.0: {
+                    'reranked': {}
+                }
+            }
+        }
+
+        know_items_ids = (
+            train[train["user"] == user]["item"].unique().tolist()
+        )
+
+        data = {
+            "item": list(
+                set(dataset.items["item"]) - set(know_items_ids)
+            )
+        }
+
+        user_testset_df = pd.DataFrame(data)
+        user_testset_df["user"] = user
+        user_testset_df["rating"] = 0.0
+
+        testset = (
+            Dataset.load_from_df(
+                user_testset_df[["user", "item", "rating"]],
+                reader=reader,
+            )
+            .build_full_trainset()
+            .build_testset()
+        )
+        predictions = model.test(testset)
+        aux_3 = sorted(
+            [
+                (pred[0], pred[1])
+                for pred in predictions
+            ],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+        lista_ordenada = sorted(aux_3, key=lambda x: x[1], reverse=True)
+
+        top_10 = [(item[0], i + 1) for i, item in enumerate(lista_ordenada[:10])]
+
+        recomend_results['top10'][0.0]["reranked"][user] = [
+                            item
+                            for _, item in enumerate(top_10)
+                        ]
+        
+        return user, recomend_results
+    except Exception as e:
+            print("An error occurred in run_user:")
+            print(e)
+
+
+def run_user_bpr_copy(
+    train, dataset,
+    calibration_column_list,
+    model,
+    trainratings,
+    p_g_u_genre_all_users,
+    p_g_u_all_users,
+    p_t_i_genre_all_items,
+    p_t_i_all_items,
+    var_genre_all_users,
+    cg_genre_all_users,
+    var_all_users,
+    cg_all_users,
+    ratios_division,
+    ratio_mean,
+    calibration_type,
+    user
+):
+    try:
+        recomend_results = {}
+
+        know_items_ids = (
+            train[train["user"] == user]["item"].unique().tolist()
+        )
+
+        data = {
+            "item": list(
+                set(dataset.items["item"]) - set(know_items_ids)
+            )
+        }
+
+        user_testset_df = pd.DataFrame(data)
+        user_testset_df["user"] = user
+        user_testset_df["rating"] = 0.0
+
+        testset = (
+            Dataset.load_from_df(
+                user_testset_df[["user", "item", "rating"]],
+                reader=reader,
+            )
+            .build_full_trainset()
+            .build_testset()
+        )
+        predictions = model.test(testset)
+        aux_3 = sorted(
+            [
+                (pred[0], pred[1])
+                for pred in predictions
+                if pred[0] == user
+            ],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        #aux_3 = sorted(
+        #            [
+        #                (pred.iid, pred.est)
+        #                for pred in predictions
+        #                if pred.uid == user
+        #            ],
+        #            key=lambda x: x[1],
+        #            reverse=True,
+        #        )
+
+        recomended_user = aux_3
+
+        var_gc = {
+            'genre': {'VAR': var_genre_all_users, "GC": cg_genre_all_users},
+            'popularity': {'VAR': var_all_users, "GC": cg_all_users},
+        }
+
+        for calibration_column in calibration_column_list:
+            if calibration_column not in recomend_results:
+                recomend_results[calibration_column] = {}
+
+            for tradeoff in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
+                if tradeoff not in recomend_results[calibration_column]:
+                    recomend_results[calibration_column][tradeoff] = {"reranked": {}}
+
+                tradeoff_value = tradeoff
+
+                re_ranked = None
+                if calibration_column == "genre":
+
+                    if tradeoff == "VAR":
+                        tradeoff_value = var_genre_all_users[user]
+                    elif tradeoff == "GC":
+                        tradeoff_value = cg_genre_all_users[user]
+                    
+                    re_ranked, _  = re_rank_list(
+                    trainratings,
+                    dataset.items,
+                    user,
+                    recomended_user[:100],
+                    p_g_u_all_users=p_g_u_genre_all_users,
+                    p_t_i_all_items=p_t_i_genre_all_items,
+                    tradeoff=tradeoff_value,
+                    N=10,
+                    distribution_column="genres",
+                    calibration_type=calibration_type
+                )
+                elif calibration_column == 'personalized':
+                    if ratios_division[str(user)] >= ratio_mean :
+                        if tradeoff == "VAR":
+                            tradeoff_value = var_genre_all_users[user]
+                        elif tradeoff == "GC":
+                            tradeoff_value = cg_genre_all_users[user]
+                        
+                        re_ranked, _  = re_rank_list(
+                        trainratings,
+                        dataset.items,
+                        user,
+                        recomended_user[:100],
+                        p_g_u_all_users=p_g_u_genre_all_users,
+                        p_t_i_all_items=p_t_i_genre_all_items,
+                        tradeoff=tradeoff_value,
+                        N=10,
+                        distribution_column="genres",
+                        calibration_type=calibration_type
+                    )
+                    else:
+                        if tradeoff == "VAR":
+                            tradeoff_value = var_all_users[user]
+                        elif tradeoff == "GC":
+                            tradeoff_value = cg_all_users[user]
+
+                        re_ranked, _  = re_rank_list(
+                        trainratings,
+                        dataset.items,
+                        user,
+                        recomended_user[:100],
+                        p_g_u_all_users=p_g_u_all_users,
+                        p_t_i_all_items=p_t_i_all_items,
+                        tradeoff=tradeoff_value,
+                        N=10,
+                        distribution_column="popularity",
+                        calibration_type=calibration_type
+                    )
+                elif calibration_column == 'inv_personalized':
+                    if ratios_division[str(user)] <= ratio_mean :
+                        if tradeoff == "VAR":
+                            tradeoff_value = var_genre_all_users[user]
+                        elif tradeoff == "GC":
+                            tradeoff_value = cg_genre_all_users[user]
+                        
+                        re_ranked, _  = re_rank_list(
+                        trainratings,
+                        dataset.items,
+                        user,
+                        recomended_user[:100],
+                        p_g_u_all_users=p_g_u_genre_all_users,
+                        p_t_i_all_items=p_t_i_genre_all_items,
+                        tradeoff=tradeoff_value,
+                        N=10,
+                        distribution_column="genres",
+                        calibration_type=calibration_type
+                    )
+                    else:
+                        if tradeoff == "VAR":
+                            tradeoff_value = var_all_users[user]
+                        elif tradeoff == "GC":
+                            tradeoff_value = cg_all_users[user]
+
+                        re_ranked, _  = re_rank_list(
+                        trainratings,
+                        dataset.items,
+                        user,
+                        recomended_user[:100],
+                        p_g_u_all_users=p_g_u_all_users,
+                        p_t_i_all_items=p_t_i_all_items,
+                        tradeoff=tradeoff_value,
+                        N=10,
+                        distribution_column="popularity",
+                        calibration_type=calibration_type
+                    )
+                else:
+
+                    if tradeoff == "VAR":
+                        tradeoff_value = var_all_users[user]
+                        tradeoff_value_pop = var_all_users[user]
+                    elif tradeoff == "GC":
+                        tradeoff_value = cg_all_users[user]
+                        tradeoff_value_pop = cg_all_users[user]
+
+                    re_ranked, _  = re_rank_list(
+                        trainratings,
+                        dataset.items,
+                        user,
+                        recomended_user[:100],
+                        p_g_u_all_users=p_g_u_all_users,
+                        p_t_i_all_items=p_t_i_all_items,
+                        tradeoff=tradeoff_value,
+                        N=10,
+                        distribution_column="popularity",
+                        calibration_type=calibration_type
+                    )
+                
+                recomend_results[calibration_column][tradeoff]["reranked"][user] = [
+                    (item, index + 1)
+                    for index, item in enumerate(re_ranked)
+                ]
+        
+        return user, recomend_results
+    except Exception as e:
+            print("An error occurred in run_user:")
+            print(e)
+
 
 import time
 
