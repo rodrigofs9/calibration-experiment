@@ -1,2 +1,0 @@
-,Model,Fold,Calibration Column,Tradeoff,MACE Genres,MACE Pop,LTC,MRMC Genres,MRMC Pop,AGGDIV,Prec@10,MAP@10,MRR,GAPBB,GAPN,GAPD
-0,pairwise,1,inprocessing,0.0,0.0,0.0,0.0,0.0,0.0,0.0004881859011911736,1.0,1.0,0.0,-1.0,-1.0,-1.0

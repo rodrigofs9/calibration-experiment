@@ -31,7 +31,7 @@ class PairWise(Model):
     def train(self, no_epochs=1, batches=1024, lr=0.001, no_factors=10, no_negatives=10, gen_mode='pair', val_split=0.01, val_interval=4):
 
         print('Generating training instances', 'of type', gen_mode)
-        x, y = generator(self.observed_relevance, self.categories, self.no_categories, self.category_per_item, self.categories_per_user, no_negatives, gen_mode, self.item_popularity)
+        x, y = generator(self.observed_relevance, self.categories, self.no_categories, self.category_per_item, self.categories_per_user, no_negatives=no_negatives, gen_mode=gen_mode)
 
         print('Performing training -', 'Epochs', no_epochs, 'Batch Size', batches, 'Learning Rate', lr, 'Factors', no_factors, 'Negatives', no_negatives, 'Mode', gen_mode)
         self.model = self.__get_model()
@@ -60,7 +60,9 @@ class PairWise(Model):
                 auc_scores = []
                 for t, (u, i, j) in enumerate(zip(user_input_val, item_i_input_val, item_j_input_val)):
                     auc_scores.append(1 if np.dot(user_matrix[u], item_matrix[i]) > np.dot(user_matrix[u], item_matrix[j]) else 0)
-                print('Validation accuracy:', auc_scores.count(1) / len(auc_scores), '(Sample', t, 'of', str(len(val_instance_indexes)) + ')')
+                    if (t % 1000) == 0:
+                        print('\rValidation accuracy:', auc_scores.count(1) / len(auc_scores), '(Sample', t, 'of', str(len(val_instance_indexes)) + ')', end='')
+                print()
                 if (auc_scores.count(1) / len(auc_scores)) < best_auc_score:
                     break
                 else:

@@ -1,7 +1,7 @@
 import numpy as np
 import random
 
-def generator(observed_relevance, categories, no_categories, category_per_item, categories_per_user, no_negatives=10, gen_mode='point', item_popularity=None):
+def generator(observed_relevance, categories, no_categories, category_per_item, categories_per_user, no_negatives=10, gen_mode='point'):
     user_input, user_attr, item_i_input, item_i_attr, item_j_input, item_j_attr, labels = [], [], [], [], [], [], []
     no_users, no_items = observed_relevance.shape[0], observed_relevance.shape[1]
 
@@ -15,7 +15,7 @@ def generator(observed_relevance, categories, no_categories, category_per_item, 
         negative_set_list[user_id] = list(set(range(no_items)) - set(positive_set_list[int(user_id)]))
 
     for index, (user_id, item_id) in enumerate(zip(users, items)):
-        if (index % 100000) == 0:
+        if (index % 10000) == 0:
             print('\rComputing instances for interaction', index, '/', len(users), 'of type', gen_mode, end='')
 
         if gen_mode == 'point':
@@ -33,14 +33,13 @@ def generator(observed_relevance, categories, no_categories, category_per_item, 
                 user_input.append(user_id)
                 item_i_input.append(item_id)
                 item_j_input.append(random.choice(negative_set_list[user_id]))
-                labels.append(item_popularity[item_id] / np.sum(item_popularity))
+                labels.append(1)
 
         else:
             raise NotImplementedError('The generation type ' + gen_mode + ' is not implemented.')
     print()
 
     return (np.array(user_input), np.array(item_i_input),np.array(item_j_input)), (np.array(labels))
-
 
 def balanced_generator(observed_relevance, categories, no_categories, category_per_item, categories_per_user, no_negatives=10, popularity_win=1500, item_popularity=None):
     user_input, user_attr, item_i_input, item_i_attr, item_j_input, item_j_attr, labels, pops = [], [], [], [], [], [], [], []

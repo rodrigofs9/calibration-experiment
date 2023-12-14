@@ -9,11 +9,14 @@ import numpy as np
 from baselines.pairwise.pairwise import PairWise
 reader = Reader()
 
-def run_user_in_processing_mitigation(train, test, dataset, users, items, user):
-    recomend_results = {'inprocessing': {}}
-    recomend_results['inprocessing'][0.0] = {"reranked": {}}
-    no_epochs = 1
-
+def run_user_in_processing_mitigation(train, test, dataset, users, items, user, tradeoff = 0.0):
+    recomend_results = {
+        'inprocessing': {
+            tradeoff: {
+                'reranked': {}
+            }
+        }
+    }
     items_metadata = dataset
     category_per_item = {}
     category_map = {
@@ -34,18 +37,18 @@ def run_user_in_processing_mitigation(train, test, dataset, users, items, user):
         'user',
         'rating'
     )
-    model.train(no_epochs=no_epochs)
+    model.train()
     model.predict()
 
-    scores = model.test()
+    predictions = model.test()
 
-    for user_id_, y_pred in scores.items():
+    for user_id_, y_pred in predictions.items():
         users__.append(user_id_)
-
         result = y_pred.argsort()[-10:][::-1]
-        result = [(i, index + 1) for index, i in enumerate(result)]
+        result = result[0][:10]
+        result_tuples = [(valor, indice + 1) for indice, valor in enumerate(result)]
 
-        recomend_results['inprocessing'][0.0]['reranked'][user] = result
+        recomend_results['inprocessing'][0.0]['reranked'][user] = result_tuples
 
     return user, recomend_results
 
@@ -195,6 +198,37 @@ def run_user(
                     distribution_column="genres",
                     calibration_type=calibration_type
                 )
+                elif calibration_column == "double":
+                    if tradeoff == "VAR":
+                        tradeoff_value = var_genre_all_users[user]
+                    elif tradeoff == "GC":
+                        tradeoff_value = cg_genre_all_users[user]
+                    
+                    re_ranked, first_calibration  = re_rank_list(
+                    trainratings,
+                    dataset.items,
+                    user,
+                    recomended_user[:100],
+                    p_g_u_all_users=p_g_u_genre_all_users,
+                    p_t_i_all_items=p_t_i_genre_all_items,
+                    tradeoff=tradeoff_value,
+                    N=100,
+                    distribution_column="popularity",
+                    calibration_type=calibration_type
+                    )
+                    
+                    re_ranked, _  = re_rank_list(
+                    trainratings,
+                    dataset.items,
+                    user,
+                    first_calibration,
+                    p_g_u_all_users=p_g_u_genre_all_users,
+                    p_t_i_all_items=p_t_i_genre_all_items,
+                    tradeoff=tradeoff_value,
+                    N=10,
+                    distribution_column="genres",
+                    calibration_type=calibration_type
+                    )
                 elif calibration_column == 'personalized':
                     if ratios_division[str(user)] >= ratio_mean :
                         if tradeoff == "VAR":
@@ -295,7 +329,9 @@ def run_user(
                     (item, index + 1)
                     for index, item in enumerate(re_ranked)
                 ]
-        
+        print('teste loko')
+        print(user)
+        print(recomend_results)
         return user, recomend_results
     except Exception as e:
             print("An error occurred in run_user:")
@@ -315,14 +351,14 @@ def run_user_bpr(
     var_all_users,
     cg_all_users,
     ratios_division,
-    ratio_mean,
+    tradeoff,
     calibration_type,
     user
 ):
     try:
         recomend_results = {
             'top10': {
-                0.0: {
+                tradeoff: {
                     'reranked': {}
                 }
             }
@@ -364,7 +400,7 @@ def run_user_bpr(
 
         top_10 = [(item[0], i + 1) for i, item in enumerate(lista_ordenada[:10])]
 
-        recomend_results['top10'][0.0]["reranked"][user] = [
+        recomend_results['top10'][tradeoff]["reranked"][user] = [
                             item
                             for _, item in enumerate(top_10)
                         ]

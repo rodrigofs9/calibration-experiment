@@ -9,6 +9,7 @@ import ast
 from sklearn import preprocessing
 from baselines.vae.splitters import min_rating_filter_pandas
 from sklearn.model_selection import train_test_split
+import numpy as np
 
 class Dataset:
     def __init__(self, test_size=0.3):
@@ -156,6 +157,60 @@ class Dataset:
                   
             #self.items = df
             #self.items.columns = ['item', 'title', 'genres']
+        elif type == "yahoo-song-new-split":
+            ratings = pd.read_csv(
+                f"{path}/ratings.csv"
+            )
+            ratings.columns = ["user", "item", "rating"]
+            df_preferred = ratings[ratings['rating'] > 3.5]
+
+            # Keep users who clicked on at least 5 movies
+            df = min_rating_filter_pandas(df_preferred, min_rating=10, filter_by="user")
+
+            # Keep movies that were clicked on by at least on 1 user
+            df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
+
+            #df = df.sample(frac=0.2, random_state=int(index))
+
+            unique_users = df['user'].unique()
+            user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+
+            unique_items = df['item'].unique()
+            item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
+
+            # Aplique o mapeamento para criar a coluna 'user' sequencial
+            df['old_user'] = df['user']
+            df['user'] = df['old_user'].map(user_mapping)
+
+            df['old_item'] = df['item']
+            df['item'] = df['old_item'].map(item_mapping)
+
+            # Obtain both usercount and itemcount after filtering
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d users and %d movies" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
+            
+            self.ratings = df
+            train, test = train_test_split(
+                df, test_size=0.3, random_state=int(index)
+            )
+            self.test = test
+            self.train = train
+
+            items = pd.read_csv(f"{path}/items.csv", sep=',')
+            items.columns = ['item', 'title', 'genres','other'] 
+            print("Before filtering, there are %d watching events" % 
+                (items.shape[0]))
+
+            df_cleaned = items.dropna(subset=['genres'])
+            df_cleaned = df_cleaned.loc[df_cleaned['genres'] != '(no genres listed)']
+            df_filtered = df_cleaned[df_cleaned['item'].isin(df['item'])]
+            print("After filtering, there are %d watching events" % 
+                (df_filtered.shape[0]))
+
+            self.items = df_filtered
         elif type == "yahoo_song_new":
             ratings = pd.read_csv(f"{path}/train_0.csv")
             ratings.columns = ["user", "item", "rating"]
@@ -170,7 +225,7 @@ class Dataset:
 
             # Keep movies that were clicked on by at least on 1 user
             df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
-
+            
             unique_users = df['user'].unique()
             user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
 
@@ -214,41 +269,97 @@ class Dataset:
                 (df_filtered.shape[0]))
 
             self.items = df_filtered
-        elif type == 'yahoo':
-            items_path = f"{path}/items.csv"
+        elif type == "yahoo_new":
+            ratings = pd.read_csv(f"{path}/ratings.csv")
+            ratings.columns = ["user", "item", "rating"]
+            ratings = ratings.dropna(subset=['user'])
+            ratings = ratings.dropna(subset=['item'])
+            ratings = ratings.dropna(subset=['rating'])
 
-            self.ratings = pd.read_csv(
-                f"{path}/ratings.csv"
-            )
-            self.ratings.columns = ["user", "item", "rating"]
-
-            unique_users = df['user'].unique()
-            user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+            df = ratings
 
             unique_items = df['item'].unique()
             item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
 
-            # Aplique o mapeamento para criar a coluna 'user' sequencial
-            df['old_user'] = df['user']
-            df['user'] = df['old_user'].map(user_mapping)
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+            print("Before filtering, there are %d watching events from %d users and %d movies" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
 
             df['old_item'] = df['item']
             df['item'] = df['old_item'].map(item_mapping)
 
-            usercount = self.ratings[['user']].groupby('user', as_index = False).size()
-            itemcount = self.ratings[['item']].groupby('item', as_index = False).size()
+            # Obtain both usercount and itemcount after filtering
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
 
             print("After filtering, there are %d watching events from %d users and %d movies" % 
-                (self.ratings.shape[0], usercount.shape[0], itemcount.shape[0]))
-
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
+            
+            self.ratings = df
+            print(self.ratings)
             train, test = train_test_split(
-                self.ratings, test_size=0.3, random_state=int(index)
+                df, test_size=0.3, random_state=int(index)
             )
+            self.test = test
+            self.train = train
+
+            items = pd.read_csv(f"{path}/items.csv", sep=',')
+            items.columns = ['old_item', 'title', 'genres']
+
+            print("Before filtering, there are %d watching events" % 
+                (items.shape[0]))
+            items['item'] = items['old_item'].map(item_mapping)
+            items = items.dropna(subset=['item'])
+            items = items.dropna(subset=['title'])
+            items = items.dropna(subset=['genres'])
+
+            print(items)
+
+            print("After filtering, there are %d watching events" % 
+                (items.shape[0]))
+
+            self.items = items
+        elif type == 'yahoo':
+            items_path = f"{path}/items.csv"
+
+            df = pd.read_csv(
+                f"{path}/ratings.csv"
+            )
+            df.columns = ["user", "item", "rating"]
+
+            unique_users = df['user'].unique()
+            #user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}
+
+            unique_items = df['item'].unique()
+            #item_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_items)}
+
+            # Aplique o mapeamento para criar a coluna 'user' sequencial
+            #df['old_user'] = df['user']
+            #df['user'] = df['old_user'].map(user_mapping)
+
+            #df['old_item'] = df['item']
+            #df['item'] = df['old_item'].map(item_mapping)
+
+            usercount = df[['user']].groupby('user', as_index = False).size()
+            itemcount = df[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d users and %d movies" % 
+                (df.shape[0], usercount.shape[0], itemcount.shape[0]))
+
+            self.ratings = df
+            self.ratings.columns = ["user", "item", "rating"]
+            print(self.ratings)
+            train, test = train_test_split(
+                df, test_size=0.3, random_state=int(index)
+            )
+            
             self.test = test
             self.train = train
 
             self.items = pd.read_csv(items_path, sep=',')
             self.items.columns = ['item', 'title', 'genres']
+            print(self.items)
         elif type == 'vae':
             items_path = f"{path}/items.csv"
 
@@ -285,7 +396,7 @@ class Dataset:
             
             items_path = f"{path}/items.csv"
             items = pd.read_csv(items_path, sep=',')
-            items.columns = ['old_item', 'title', 'genres']
+            items.columns = ['item', 'title', 'genres', 'other']
             items['item'] = items['old_item'].astype('category').cat.codes
             items['old_item'] = items['old_item'].astype('category')
 
@@ -424,10 +535,12 @@ class Dataset:
             df_preferred = ratings[ratings['rating'] > 3.5]
 
             # Keep users who clicked on at least 5 movies
-            df = min_rating_filter_pandas(df_preferred, min_rating=180, filter_by="user")
+            df = min_rating_filter_pandas(df_preferred, min_rating=200, filter_by="user")
 
             # Keep movies that were clicked on by at least on 1 user
             df = min_rating_filter_pandas(df, min_rating=10, filter_by="item")
+
+            df = df.sample(frac=0.02, random_state=int(index))
 
             unique_users = df['user'].unique()
             user_mapping = {old_id: new_id for new_id, old_id in enumerate(unique_users)}

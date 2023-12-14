@@ -174,9 +174,9 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_column_
                 ratio_mean,
                 'base'
             )
-            #from itertools import islice
-            #exp_results = exp.map(f, list(islice(test["user"], 1)))
-            exp_results = exp.map(f, set(test["user"]))
+            from itertools import islice
+            exp_results = exp.map(f, list(islice(test["user"], 1)))
+            #exp_results = exp.map(f, set(test["user"]))
             exp.close()
             exp.join()
             print(f"Ending experiment. Elapsed Time: {time.time() - started}")

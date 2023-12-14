@@ -158,21 +158,11 @@ def run_experiment(dataset, df):
         #users = dataset.train['user'].unique().tolist()
         users = list(np.unique(dataset.train['user'].values))
         items = list(np.unique(dataset.train['item'].values))
-        #traintest = pd.concat([train, test])
-
-        #print(type(dataset.items))
-        #no_users = len(users)
-        #no_items = len(items)
-
-        #max_size = min(no_users, no_items)
-
-        #if no_items > max_size:
-        #    items = random.sample(items, max_size - 1)
         from itertools import islice
 
         f = partial(run_user_in_processing_mitigation, train, test, newDataset, users, items)
-        exp_results = exp.map(f, set(test["user"]))
-        #exp_results = exp.map(f, list(islice(test["user"], 5)))
+        #exp_results = exp.map(f, set(test["user"]))
+        exp_results = exp.map(f, list(islice(test["user"], 100)))
         exp.close()
         exp.join()
         print(f"Ending experiment. Elapsed Time: {time.time() - started}")
@@ -220,7 +210,7 @@ def run_experiment(dataset, df):
     return df
 
 if __name__ == '__main__':
-    fold = '1'
+    fold = '3'
 
     parser = argparse.ArgumentParser(description='Run the experiment.')
 

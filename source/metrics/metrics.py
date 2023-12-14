@@ -44,9 +44,10 @@ class Metrics:
             if len(item) > 0:
                 types = list(item[distribution_column])[0].split("|")
                 distribution = {type_: 1 / len(types) for type_ in types}
+                print(f"Item ID: {item_id}, Distribution: {distribution}")
                 return distribution
         except Exception as e:
-            print("error", e)
+            print(f"Error for Item ID {item_id}: {e}")
             time.sleep(300)
         return None
 
@@ -124,10 +125,7 @@ class Metrics:
             if user in group_list:
                 sum_items = 0
                 for item, _ in recommended_list[user]:
-                    if(isPairwise):
-                        sum_items += popularity_items.get(tuple(item), 0)
-                    else:
-                        sum_items += popularity_items.get(item, 0)
+                    sum_items += popularity_items.get(item, 0)
                 
                 if len(recommended_list[user]) != 0: sum_users += sum_items/len(recommended_list[user])
 
@@ -273,29 +271,31 @@ class Metrics:
             weigth = {}
             all_weight = 0
             for item, score in recomended_items:
-                if int(item) not in p_t_i_all_items:
-                    p_g_i = Metrics.get_p_t_i_distribution(
-                        int(item),
-                        movies_data,
-                        distribution_column=distribution_column,
-                    )
-                else:
-                    p_g_i = p_t_i_all_items[int(item)]
-                if p_g_i:
-
-                    w_ri = score
-
-                    for type_ in p_g_i.keys():
-
-                        types_score = types_distribution.get(type_, 0.0)
-                        types_distribution[type_] = types_score + (
-                            w_ri * p_g_i.get(type_, 0)
+                try:
+                    if int(item) not in p_t_i_all_items:
+                        p_g_i = Metrics.get_p_t_i_distribution(
+                            int(item),
+                            movies_data,
+                            distribution_column=distribution_column,
                         )
+                    else:
+                        p_g_i = p_t_i_all_items[int(item)]
+                    if p_g_i:
 
-                        weigth_rating = weigth.get(type_, 0.0)
-                        weigth[type_] = weigth_rating + w_ri
-                        all_weight += w_ri
+                        w_ri = score
 
+                        for type_ in p_g_i.keys():
+
+                            types_score = types_distribution.get(type_, 0.0)
+                            types_distribution[type_] = types_score + (
+                                w_ri * p_g_i.get(type_, 0)
+                            )
+
+                            weigth_rating = weigth.get(type_, 0.0)
+                            weigth[type_] = weigth_rating + w_ri
+                            all_weight += w_ri
+                except Exception as e:
+                    print(e)
             for type_, type_score in types_distribution.items():
                 if distribution_column == "popularity":
                     w = type_score / all_weight
@@ -555,12 +555,8 @@ class Metrics:
                 i[0] for i in recomendations_per_user[user]
             ]
 
-        if(isPairwise):
-            set_recommended_items = set(tuple(item) for item in set_recommended_items)
-        else:
-            set_recommended_items = set(set_recommended_items)
+        set_recommended_items = set(set_recommended_items)
         
-
         return len(set_recommended_items) / len(all_items)
 
     @staticmethod
@@ -574,11 +570,7 @@ class Metrics:
 
             for item, index in y_pred:
                 n_ += 1
-                if(isPairwise):
-                    if np.any(np.isin(item, aux["item"])):
-                        n_relevant += 1
-                else:
-                    if item in list(aux["item"]):
+                if item in list(aux["item"]):
                         n_relevant += 1
 
             n_relev += float(n_relevant)
@@ -647,14 +639,9 @@ class Metrics:
     def item_is_relevant(testratings, user_id, item_id, isPairwise = False):
         aux = testratings[testratings["user"] == user_id]
 
-        if (isPairwise):
-            if np.any(item_id == np.array(aux['item'])):
-                return True
-            return False
-        else:
-            if item_id in list(aux['item']):
-                return True
-            return False
+        if item_id in list(aux['item']):
+            return True
+        return False
 
     @staticmethod
     def user_relevant_items(testratings, user_id):
