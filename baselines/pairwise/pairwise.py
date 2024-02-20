@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import os
 
 from baselines.pairwise.pairwise_creator import generator
 from baselines.pairwise.pairwise_model import Model

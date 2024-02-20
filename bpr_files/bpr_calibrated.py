@@ -2,10 +2,16 @@ import numpy as np
 from tqdm import trange
 import pandas as pd
 from scipy.sparse import csr_matrix
+from metrics import Metrics
+from scipy.spatial.distance import jensenshannon
+from scipy import spatial
 import sys
-from itertools import islice 
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import normalize
+from itertools import islice 
+
+from tensorboardX import SummaryWriter
+import math
 
 class BPR:
     """
@@ -97,7 +103,7 @@ class BPR:
                              .groupby('user')
                              .agg(**{'num_items': ('item', 'count')})
                              .reset_index())
-        data = data.merge(data_user_num_items, on='user', how='inner')
+        data = data.merge(data_user_num_items, on = 'user', how = 'inner')
         data = data[data['num_items'] > 1]
 
         for col in (items_col, users_col, ratings_col):
@@ -108,9 +114,15 @@ class BPR:
         ratings.eliminate_zeros()
         return ratings, data
     
-    
     def __init__(self, learning_rate = 0.01, n_factors = 15, n_iters = 10, 
-                 batch_size = 1000, reg = 0.01, seed = 1234, verbose = True):
+                 batch_size = 1000, reg = 0.01, seed = 1234, verbose = True,
+                 tradeoff = None, distribution_column = None, target_all_users_distribution = None, target_all_items_distribution = None,
+                 dataset = None, movies_data = None, tipo = 'gs1'
+         ):
+        self.tradeoff = tradeoff
+        self.distribution_column = distribution_column
+        self.target_all_users_distribution = target_all_users_distribution
+        self.target_all_items_distribution = target_all_items_distribution
         self.reg = reg
         self.seed = seed
         self.verbose = verbose
@@ -118,21 +130,32 @@ class BPR:
         self.n_factors = n_factors
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.dataset = dataset
+        self.movies_data = movies_data
+        self.tipo = tipo
+        self.count = 0
+        self.count2 = 0
         
         # to avoid re-computation at predict
         self._prediction = None
         
     def test(self, data):
-        user = int(data[0][0])
-
-        pred = [i for i in self._predict_user(user)]
+        user_id = int(data[0][0])
+        pred = [i for i in self._predict_user(user_id)]
 
         return list(enumerate(pred))
         
     def fit(self, user_item_train_df):
+        self.writer = SummaryWriter()
+        distribution_column = self.distribution_column
+        target_all_users_distribution = self.target_all_users_distribution
+        target_all_items_distribution = self.target_all_items_distribution
+        dataset = self.dataset
+        movies_data = self.movies_data
+
         train = pd.DataFrame(
             list(user_item_train_df.all_ratings()),
-            columns=['user', 'item', 'rating']
+            columns = ['user', 'item', 'rating']
         )
 
         items_col = 'item'
@@ -140,6 +163,7 @@ class BPR:
         ratings_col = 'rating'
         threshold = 0
         X, _ = self.create_matrix(train, users_col, items_col, ratings_col, threshold)
+        X
         
         ratings = X
         indptr = ratings.indptr
@@ -172,8 +196,25 @@ class BPR:
             for _ in range(batch_iters):
                 sampled = self._sample(n_users, n_items, indices, indptr)
                 sampled_users, sampled_pos_items, sampled_neg_items = sampled
-                self._update(sampled_users, sampled_pos_items, sampled_neg_items)
-
+                self._update(
+                    sampled_users, 
+                    sampled_pos_items,
+                    sampled_neg_items,
+                    distribution_column = distribution_column,
+                    target_all_users_distribution = target_all_users_distribution, 
+                    target_all_items_distribution = target_all_items_distribution,
+                    dataset = dataset, 
+                    movies_data = movies_data
+                )
+                sampled = self._sample(n_users, n_items, indices, indptr)
+                sampled_users, sampled_pos_items, sampled_neg_items = sampled
+                self._update2(sampled_users, sampled_pos_items,
+                    sampled_neg_items,
+                    distribution_column = distribution_column,
+                    target_all_users_distribution = target_all_users_distribution, target_all_items_distribution = target_all_items_distribution,
+                    dataset = dataset, movies_data = movies_data
+                )
+        self.writer.close()
         return self
     
     def _sample(self, n_users, n_items, indices, indptr):
@@ -194,12 +235,94 @@ class BPR:
             sampled_neg_items[idx] = neg_item
 
         return sampled_users, sampled_pos_items, sampled_neg_items
+
+    def _update2(self, u, i, j, distribution_column, target_all_users_distribution, target_all_items_distribution, dataset, movies_data):
+        m = 0
+        for user_id, _, jj in zip(u, i, j):
+            preds = list(enumerate(self.user_factors[user_id] @ self.item_factors.T))
+            preds = sorted(preds, key=lambda x: x[1], reverse=True)
+            preds = preds[:10]
+
+            if user_id in target_all_users_distribution:
+                KL_ui = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id = user_id, recommended_items = preds,
+                    target_user_distribution = target_all_users_distribution[user_id], distribution_column = distribution_column,
+                    target_all_items_distribution = target_all_items_distribution
+                )
+
+                KL_void = Metrics.get_user_KL_divergence(
+                    dataset, movies_data,
+                    user_id = user_id, recommended_items = [],
+                    target_user_distribution = target_all_users_distribution[user_id], distribution_column = distribution_column,
+                    target_all_items_distribution = target_all_items_distribution
+                )
+
+                # r_uij = np.sum(self.user_factors[uu] * (itemsi - itemsj)).astype(np.float128)
+                # r_uij = (div_ui - div_uj).astype(np.float128)
+                if KL_void != 0:
+                    r_uij = (1 - (KL_ui/KL_void))#*5
+                else:
+                    r_uij = 0
+                sigmoid = r_uij #np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
+                m += sigmoid
+                #print("KL", KL_ui, KL_void)
+                #print("RR", r_uij)
+                #print("sigmoid", sigmoid)
+                #if math.isnan(sigmoid):
+                    #print("Predictions: ", preds)
+                    #input()
                 
-    def _update(self, u, i, j):
+                # sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
+                for iii, _ in preds:
+                    itemsi = self.item_factors[iii]
+                    itemsj = self.item_factors[jj]
+                    grad_u = sigmoid * (itemsi - itemsj) + self.reg * self.user_factors[user_id]
+                    grad_i = sigmoid * self.user_factors[user_id] + self.reg * self.item_factors[iii]
+                    self.user_factors[user_id] += self.learning_rate/5 * grad_u
+                    self.item_factors[iii] += self.learning_rate/5 * grad_i
+        self.count += 1
+        m = m/len(u)
+        self.writer.add_scalar('MC/update2', m, self.count)
+        return self
+                
+    def _update(self, u, i, j, distribution_column, target_all_users_distribution, target_all_items_distribution, dataset, movies_data):
         """
         update according to the bootstrapped user u, 
         positive item i and negative item j
         """
+        m = 0
+        for user_id, _, _ in zip(u, i, j):
+            preds = list(enumerate(self.user_factors[user_id] @ self.item_factors.T))
+            preds = sorted(preds, key = lambda x: x[1], reverse = True)
+            preds = preds[:10]
+
+            if user_id in target_all_users_distribution:
+                KL_ui = Metrics.get_user_KL_divergence(
+                    dataset, 
+                    movies_data,
+                    user_id = user_id, 
+                    recommended_items = preds,
+                    target_user_distribution = target_all_users_distribution[user_id], 
+                    distribution_column = distribution_column,
+                    target_all_items_distribution = target_all_items_distribution
+                )
+
+                KL_void = Metrics.get_user_KL_divergence(
+                    dataset, 
+                    movies_data,
+                    user_id = user_id, 
+                    recommended_items = [],
+                    target_user_distribution = target_all_users_distribution[user_id], 
+                    distribution_column = distribution_column,
+                    target_all_items_distribution = target_all_items_distribution
+                )
+                if KL_void != 0: 
+                    m += (1-(KL_ui/KL_void))
+        m = m/len(u)
+        self.count2 += 1
+        self.writer.add_scalar('MC/update1', m, self.count2)
+
         user_u = self.user_factors[u]
         item_i = self.item_factors[i]
         item_j = self.item_factors[j]
@@ -250,8 +373,7 @@ class BPR:
         this as it returns a dense matrix and may take up huge amounts of
         memory for large datasets
         """
-        if self._prediction is None:
-            self._prediction = self.user_factors.dot(self.item_factors.T)
+        self._prediction = self.user_factors.dot(self.item_factors.T)
 
         return self._prediction
 
