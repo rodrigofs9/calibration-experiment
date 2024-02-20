@@ -134,8 +134,8 @@ def run_pairwise(dataset, df, tradeoff):
     items = list(np.unique(dataset.train['item'].values))
 
     f = partial(run_in_processing_rerank, train, test, newDataset, users, items)
-    #exp_results = exp.map(f, set(test["user"]))
-    exp_results = exp.map(f, list(islice(test["user"], 1)))
+    exp_results = exp.map(f, set(test["user"]))
+    #exp_results = exp.map(f, list(islice(test["user"], 1)))
     exp.close()
     exp.join()
     print(f"Ending experiment. Elapsed Time: {time.time() - started}")
@@ -288,8 +288,8 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
                 calibration_calculation_type
             )        
         
-        exp_results = exp.map(f, list(islice(test["user"], 10)))
-        #exp_results = exp.map(f, set(test["user"]))
+        #exp_results = exp.map(f, list(islice(test["user"], 10)))
+        exp_results = exp.map(f, set(test["user"]))
         exp.close()
         exp.join()
         print(f"Ending experiment. Elapsed Time: {time.time() - started}")
@@ -406,7 +406,7 @@ if __name__ == '__main__':
             dataset.load_dataset("./datasets/yahoo_movies", type = "yahoo_movies")
         elif selected_dataset == "2":
             selected_dataset = "yahoo_songs"
-            dataset.load_dataset("./datasets/yahoo_songs", type = "yahoo_songs")
+            dataset.load_dataset("./datasets/yahoo_song", type = "yahoo_song")
         elif selected_dataset == "3":
             selected_dataset = "movielens"
             dataset.load_dataset("./datasets/ml-20m", type = "movielens")
