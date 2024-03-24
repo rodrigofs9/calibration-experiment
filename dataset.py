@@ -21,6 +21,8 @@ class Dataset:
     def load_dataset(self, path: str, type = "1ml", index = '0'):
         self.type = type
 
+        sample_frac = 1.0 
+
         if type == "yahoo_song":
             ratings = pd.read_csv(f"{path}/train_0.csv")
             ratings.columns = ["user", "item", "rating"]
@@ -53,7 +55,8 @@ class Dataset:
 
             print("After filtering, there are %d watching events from %d users and %d movies" % 
                 (df.shape[0], usercount.shape[0], itemcount.shape[0]))
-            
+            df = df.sample(frac = sample_frac, random_state = 42)
+
             self.ratings = df
             train, test = train_test_split(df, test_size = 0.3, random_state = int(index))
             self.test = test
@@ -102,6 +105,7 @@ class Dataset:
             print("After filtering, there are %d watching events from %d users and %d movies" % 
                 (df.shape[0], usercount.shape[0], itemcount.shape[0]))
             
+            df = df.sample(frac = sample_frac, random_state = 42)
             self.ratings = df
             print(self.ratings)
             train, test = train_test_split(df, test_size = 0.3, random_state = int(index))
@@ -183,6 +187,7 @@ class Dataset:
             print("After filtering, there are %d watching events from %d users and %d movies" % 
                 (df.shape[0], usercount.shape[0], itemcount.shape[0]))
             
+            df = df.sample(frac = sample_frac, random_state = 42)
             self.ratings = df
             train, test = train_test_split(df, test_size = 0.3, random_state = int(index))
             self.test = test

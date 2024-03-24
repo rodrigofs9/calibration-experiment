@@ -249,7 +249,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
             'n_factors': 15,
             'batch_size': 32,
             'tradeoff': tradeoff,
-            'distribution_column': 'genre',
+            'distribution_column': 'popularity',
             'target_all_users_distribution': target_all_users_genres_distribution,
             'target_all_items_distribution': target_all_items_genres_distribution,
             'dataset': trainratings,
@@ -257,7 +257,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
             'tipo': 'gs1'
         }
         bpr = BPR_ideia1(**bpr_params)
-        model_name_list.append(f"BPR-Genre | Ideia 1 ")
+        model_name_list.append(f"BPR-Popularity | Ideia 1 ")
         model_list.append(bpr)
         
     for model_name, model in zip(model_name_list, model_list):
@@ -288,7 +288,7 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
                 calibration_calculation_type
             )        
         
-        #exp_results = exp.map(f, list(islice(test["user"], 10)))
+        #exp_results = exp.map(f, list(islice(test["user"], 1)))
         exp_results = exp.map(f, set(test["user"]))
         exp.close()
         exp.join()
@@ -522,7 +522,7 @@ if __name__ == '__main__':
                 df.reset_index()
                 df.to_csv(f"./results/{selected_dataset}_{calibration_type}_fold_{fold}_{time.time()}_complete.csv")
         elif (calibration_type_value == "6" or calibration_type_value == "7"):
-            for tradeoff in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]:
+            for tradeoff in [0.0]:
                 df = pd.DataFrame([])
                 df = run_experiment(models_names, models, dataset, df, calibration_type, tradeoff)
                 df.columns=[
