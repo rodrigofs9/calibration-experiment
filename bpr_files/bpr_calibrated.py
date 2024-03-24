@@ -3,15 +3,29 @@ from tqdm import trange
 import pandas as pd
 from scipy.sparse import csr_matrix
 from metrics import Metrics
-from scipy.spatial.distance import jensenshannon
-from scipy import spatial
 import sys
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import normalize
 from itertools import islice 
 
 from tensorboardX import SummaryWriter
-import math
+import multiprocessing
+
+def update_wrapper(sample, bpr_instance, distribution_column, target_all_users_distribution, target_all_items_distribution, dataset, movies_data):
+    u, i, j = sample
+    bpr_instance._update(u, i, j, distribution_column = distribution_column,
+                         target_all_users_distribution = target_all_users_distribution,
+                         target_all_items_distribution = target_all_items_distribution,
+                         dataset = dataset,
+                         movies_data = movies_data)
+
+def update2_wrapper(sample, bpr_instance, distribution_column, target_all_users_distribution, target_all_items_distribution, dataset, movies_data):
+    u, i, j = sample
+    bpr_instance._update2(u, i, j, distribution_column = distribution_column,
+                          target_all_users_distribution = target_all_users_distribution,
+                          target_all_items_distribution = target_all_items_distribution,
+                          dataset = dataset,
+                          movies_data = movies_data)
 
 class BPR:
     """
@@ -190,30 +204,23 @@ class BPR:
         # progress bar for training iteration if verbose is turned on
         loop = range(self.n_iters)
         if self.verbose:
-            loop = trange(self.n_iters, desc = self.__class__.__name__)
+            loop = trange(self.n_iters, desc = self.__class__.__name__)          
         
         for _ in loop:
+            pool = multiprocessing.Pool(processes=multiprocessing.cpu_count())
+            samples = []
             for _ in range(batch_iters):
                 sampled = self._sample(n_users, n_items, indices, indptr)
                 sampled_users, sampled_pos_items, sampled_neg_items = sampled
-                self._update(
-                    sampled_users, 
-                    sampled_pos_items,
-                    sampled_neg_items,
-                    distribution_column = distribution_column,
-                    target_all_users_distribution = target_all_users_distribution, 
-                    target_all_items_distribution = target_all_items_distribution,
-                    dataset = dataset, 
-                    movies_data = movies_data
-                )
-                sampled = self._sample(n_users, n_items, indices, indptr)
-                sampled_users, sampled_pos_items, sampled_neg_items = sampled
-                self._update2(sampled_users, sampled_pos_items,
-                    sampled_neg_items,
-                    distribution_column = distribution_column,
-                    target_all_users_distribution = target_all_users_distribution, target_all_items_distribution = target_all_items_distribution,
-                    dataset = dataset, movies_data = movies_data
-                )
+                samples.append((sampled_users, sampled_pos_items, sampled_neg_items,
+                                self, distribution_column, target_all_users_distribution,
+                                target_all_items_distribution, dataset, movies_data))
+
+            pool.map_async(update_wrapper, samples)
+            pool.map_async(update2_wrapper, samples)
+            
+            pool.close()
+            pool.join()
         self.writer.close()
         return self
     
@@ -258,27 +265,18 @@ class BPR:
                     target_all_items_distribution = target_all_items_distribution
                 )
 
-                # r_uij = np.sum(self.user_factors[uu] * (itemsi - itemsj)).astype(np.float128)
-                # r_uij = (div_ui - div_uj).astype(np.float128)
                 if KL_void != 0:
-                    r_uij = (1 - (KL_ui/KL_void))#*5
+                    r_uij = (1 - (KL_ui/KL_void)) * self.item_factors[jj]
                 else:
                     r_uij = 0
-                sigmoid = r_uij #np.exp(-r_uij) / (1.0 + np.exp(-r_uij))
+                sigmoid = r_uij
                 m += sigmoid
-                #print("KL", KL_ui, KL_void)
-                #print("RR", r_uij)
-                #print("sigmoid", sigmoid)
-                #if math.isnan(sigmoid):
-                    #print("Predictions: ", preds)
-                    #input()
-                
-                # sigmoid_tiled = np.tile(sigmoid, (self.n_factors, 1)).T
+
                 for iii, _ in preds:
-                    itemsi = self.item_factors[iii]
-                    itemsj = self.item_factors[jj]
-                    grad_u = sigmoid * (itemsi - itemsj) + self.reg * self.user_factors[user_id]
-                    grad_i = sigmoid * self.user_factors[user_id] + self.reg * self.item_factors[iii]
+                    itemsi = self.item_factors[iii] # Fatores do item positivo
+                    itemsj = self.item_factors[jj] # Fatores do item negativo
+                    grad_u = sigmoid * (itemsi - itemsj) + self.reg * self.user_factors[user_id] # Gradiente para usuários
+                    grad_i = sigmoid * self.user_factors[user_id] + self.reg * self.item_factors[iii] # Gradiente para itens positivos
                     self.user_factors[user_id] += self.learning_rate/5 * grad_u
                     self.item_factors[iii] += self.learning_rate/5 * grad_i
         self.count += 1
@@ -290,14 +288,51 @@ class BPR:
         """
         update according to the bootstrapped user u, 
         positive item i and negative item j
+
+        Atualiza os fatores do modelo BPR usando o algoritmo BPR.
+        Este método calcula e aplica gradientes baseados na divergência de Kullback-Leibler entre
+        as distribuições de preferência do usuário e as distribuições alvo.
+
+        Parameters
+        ----------
+        u : array
+            Array de índices de usuários
+
+        i : array
+            Array de índices de itens positivos
+
+        j : array
+            Array de índices de itens negativos
+
+        distribution_column : str
+            Nome da coluna que contém a distribuição de preferência do usuário
+
+        target_all_users_distribution : dict
+            Dicionário contendo as distribuições alvo de todos os usuários
+
+        target_all_items_distribution : dict
+            Dicionário contendo as distribuições alvo de todos os itens
+
+        dataset : DataFrame
+            DataFrame contendo os dados do conjunto de dados
+
+        movies_data : DataFrame
+            DataFrame contendo os dados dos filmes
+
+        Returns
+        -------
+        self : objeto BPR
+            Retorna a instância do objeto BPR após a atualização
         """
-        m = 0
+        m = 0 # Inicializa a variável de soma para o cálculo da média das saídas do modelo
         for user_id, _, _ in zip(u, i, j):
-            preds = list(enumerate(self.user_factors[user_id] @ self.item_factors.T))
-            preds = sorted(preds, key = lambda x: x[1], reverse = True)
-            preds = preds[:10]
+            preds = list(enumerate(self.user_factors[user_id] @ self.item_factors.T)) # Gera as previsões dos itens
+            preds = sorted(preds, key = lambda x: x[1], reverse = True) # Ordena as previsões dos itens
+            preds = preds[:10] # Mantém apenas as 10 previsões principai
 
             if user_id in target_all_users_distribution:
+                # Calcula a divergência de Kullback-Leibler entre as distribuições do usuário e as distribuições alvo
+    
                 KL_ui = Metrics.get_user_KL_divergence(
                     dataset, 
                     movies_data,
