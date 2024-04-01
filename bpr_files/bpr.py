@@ -109,7 +109,7 @@ class BPR:
         return ratings, data
     
     
-    def __init__(self, learning_rate = 0.01, n_factors = 15, n_iters = 10, 
+    def __init__(self, learning_rate = 0.1, n_factors = 15, n_iters = 10, 
                  batch_size = 1000, reg = 0.01, seed = 1234, verbose = True):
         self.reg = reg
         self.seed = seed
@@ -178,8 +178,8 @@ class BPR:
     
     def _sample(self, n_users, n_items, indices, indptr):
         """sample batches of random triplets u, i, j"""
-        sampled_pos_items = np.zeros(self.batch_size, dtype = np.int)
-        sampled_neg_items = np.zeros(self.batch_size, dtype = np.int)
+        sampled_pos_items = np.zeros(self.batch_size, dtype = int)
+        sampled_neg_items = np.zeros(self.batch_size, dtype = int)
         sampled_users = np.random.choice(
             n_users, size = self.batch_size, replace = False)
 
