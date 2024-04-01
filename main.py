@@ -243,18 +243,11 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
 
     if (calibration_type_value == "7"):
         bpr_params = {
-            'reg': 0.0001,
-            'learning_rate': 0.01,
-            'n_iters': 50,
-            'n_factors': 15,
-            'batch_size': 32,
-            'tradeoff': tradeoff,
             'distribution_column': 'popularity',
             'target_all_users_distribution': target_all_users_genres_distribution,
             'target_all_items_distribution': target_all_items_genres_distribution,
             'dataset': trainratings,
-            'movies_data': dataset.items,
-            'tipo': 'gs1'
+            'movies_data': dataset.items
         }
         bpr = BPR_ideia1(**bpr_params)
         model_name_list.append(f"BPR-Popularity | Ideia 1 ")
@@ -493,14 +486,7 @@ if __name__ == '__main__':
             #models.append(nmf)
             #models_names.append("NMF")
         elif (calibration_type_value == "6"):
-            bpr_params = {
-                'reg': 0.0001,
-                'learning_rate': 0.01,
-                'n_iters': 50,
-                'n_factors': 15,
-                'batch_size': 32,
-            }
-            bpr = BPR_classic(**bpr_params)
+            bpr = BPR_classic()
             models_names.append(f"BPR Classic")
             models.append(bpr)
         elif (calibration_type_value == "8"):
