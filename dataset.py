@@ -205,3 +205,39 @@ class Dataset:
                 (df_filtered.shape[0]))
 
             self.items = df_filtered
+            
+        elif type == "movielens_llm":
+            train = pd.read_csv(f"{path}/train.csv")
+            test = pd.read_csv(f"{path}/test.csv")
+            
+            train.columns = ["user", "item", "rating", "timestamp"]
+            test.columns = ["user", "item", "rating", "timestamp"]
+            
+            usercount = train[['user']].groupby('user', as_index = False).size()
+            itemcount = train[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d train users and %d movies" % 
+                (train.shape[0], usercount.shape[0], itemcount.shape[0]))
+            
+            testusercount = test[['user']].groupby('user', as_index = False).size()
+            testitemcount = test[['item']].groupby('item', as_index = False).size()
+
+            print("After filtering, there are %d watching events from %d test users and %d movies" % 
+                (test.shape[0], testusercount.shape[0], testitemcount.shape[0]))
+            
+            self.ratings = train
+            self.test = test
+            self.train = train
+
+            items = pd.read_csv(f"{path}/items.csv", sep = ',')
+            items.columns = ['item', 'title', 'genres'] 
+            print("Before filtering, there are %d watching events" % 
+                (items.shape[0]))
+
+            df_cleaned = items.dropna(subset = ['genres'])
+            df_cleaned = df_cleaned.loc[df_cleaned['genres'] != '(no genres listed)']
+            df_filtered = df_cleaned[df_cleaned['item'].isin(train['item'])]
+            print("After filtering, there are %d watching events" % 
+                (df_filtered.shape[0]))
+
+            self.items = df_filtered

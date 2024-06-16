@@ -101,13 +101,14 @@ def run_rerank(
         if calibration_type not in recommend_results:
             recommend_results[calibration_type] = {}
 
-        for tradeoff in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
+        for tradeoff in [1]:
             if tradeoff not in recommend_results[calibration_type]:
                 recommend_results[calibration_type][tradeoff] = {"reranked": {}}
 
             tradeoff_value = tradeoff
 
             re_ranked = None
+            re_ranked_with_score = None
             if calibration_type == "genre":
 
                 if tradeoff == "VAR":
@@ -115,7 +116,7 @@ def run_rerank(
                 elif tradeoff == "GC":
                     tradeoff_value = cg_genre_all_users[user]
                 
-                re_ranked, _ = re_rank_list(
+                re_ranked, re_ranked_with_score = re_rank_list(
                 trainratings,
                 dataset.items,
                 user,
@@ -146,7 +147,7 @@ def run_rerank(
                 calibration_type = calibration_type
                 )
                 
-                re_ranked, _  = re_rank_list(
+                re_ranked, re_ranked_with_score  = re_rank_list(
                 trainratings,
                 dataset.items,
                 user,
@@ -165,7 +166,7 @@ def run_rerank(
                     elif tradeoff == "GC":
                         tradeoff_value = cg_genre_all_users[user]
                     
-                    re_ranked, _ = re_rank_list(
+                    re_ranked, re_ranked_with_score = re_rank_list(
                     trainratings,
                     dataset.items,
                     user,
@@ -183,7 +184,7 @@ def run_rerank(
                     elif tradeoff == "GC":
                         tradeoff_value = cg_all_users[user]
 
-                    re_ranked, _ = re_rank_list(
+                    re_ranked, re_ranked_with_score = re_rank_list(
                     trainratings,
                     dataset.items,
                     user,
@@ -202,7 +203,7 @@ def run_rerank(
                     elif tradeoff == "GC":
                         tradeoff_value = cg_genre_all_users[user]
                     
-                    re_ranked, _ = re_rank_list(
+                    re_ranked, re_ranked_with_score = re_rank_list(
                     trainratings,
                     dataset.items,
                     user,
@@ -220,7 +221,7 @@ def run_rerank(
                     elif tradeoff == "GC":
                         tradeoff_value = cg_all_users[user]
 
-                    re_ranked, _ = re_rank_list(
+                    re_ranked, re_ranked_with_score = re_rank_list(
                     trainratings,
                     dataset.items,
                     user,
@@ -239,7 +240,7 @@ def run_rerank(
                 elif tradeoff == "GC":
                     tradeoff_value = cg_all_users[user]
 
-                re_ranked, _ = re_rank_list(
+                re_ranked, re_ranked_with_score = re_rank_list(
                     trainratings,
                     dataset.items,
                     user,

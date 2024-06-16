@@ -6,6 +6,7 @@ import argparse
 import time
 import multiprocessing
 import gc
+import csv
 current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(os.path.dirname(current))
 sys.path.append(parent)
@@ -281,11 +282,26 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
                 calibration_calculation_type
             )        
         
-        #exp_results = exp.map(f, list(islice(test["user"], 1)))
+        #exp_results = exp.map(f, list(islice(test["user"], 3)))
         exp_results = exp.map(f, set(test["user"]))
         exp.close()
         exp.join()
         print(f"Ending experiment. Elapsed Time: {time.time() - started}")
+        
+        #all_data = []
+        #for user_data in exp_results:
+        #    user_id = user_data[0]
+        #    data = user_data[1][calibration_type][1]['reranked'][user_id]
+
+        #    for item, rank in data:
+        #        item_id = item[0]
+        #        score = item[1]
+        #        all_data.append([user_id, item_id, rank, score])
+
+        #results_df = pd.DataFrame(all_data, columns=['User_ID', 'Item_ID', 'Rank', 'Score'])
+        #results_df.to_csv(f"./results/expresults_{selected_dataset}_{calibration_type}_fold_{fold}_tmp_{model_name}.csv")
+        #print("Dados salvos com sucesso no arquivo CSV:")
+
 
         met = Pool(7)
         f = partial(
@@ -317,9 +333,6 @@ def run_experiment(model_name_list, model_list, dataset, df, calibration_type, t
         for metrics_df in met_results:
             metrics_data.append(metrics_df)
         
-        del model
-        gc.collect()
-        pd.DataFrame(metrics_data).to_csv(f"./results/{selected_dataset}_{calibration_type}_fold_{fold}_tmp_{model_name}.csv")
 
     df = pd.concat([df, pd.DataFrame(metrics_data)])
     return df
@@ -382,8 +395,9 @@ if __name__ == '__main__':
     print("1. Yahoo Movies")
     print("2. Yahoo Songs")
     print("3. Movielens")
+    print("4. Movielens LLM")
 
-    valid_dataset_options = ["1", "2", "3"]
+    valid_dataset_options = ["1", "2", "3", "4"]
 
     while True:
         selected_dataset = input("Enter the number of the dataset: ")
@@ -403,6 +417,9 @@ if __name__ == '__main__':
         elif selected_dataset == "3":
             selected_dataset = "movielens"
             dataset.load_dataset("./datasets/ml-20m", type = "movielens")
+        elif selected_dataset == "4":
+            selected_dataset = "movielens llm"
+            dataset.load_dataset("./datasets/ml20m_llm", type = "movielens_llm")    
 
     print("Dados Train")
     print(dataset.train.shape)
@@ -470,19 +487,19 @@ if __name__ == '__main__':
         if (calibration_type_value == "1" or calibration_type_value == "2" or calibration_type_value == "3" or 
             calibration_type_value == "4" or calibration_type_value == "5"):
             sim_options = {"name": "pearson_baseline", "user_based": False}
-            itemknn = KNNWithMeans(k = 30, sim_options = sim_options)
-            models.append(itemknn)
-            models_names.append("itemknn")
+            #itemknn = KNNWithMeans(k = 30, sim_options = sim_options)
+            #models.append(itemknn)
+            #models_names.append("itemknn")
 
-            slope = SlopeOne()
+            #slope = SlopeOne()
             #models.append(slope)
             #models_names.append("slopeOne")
 
             svdpp = SVDpp(n_epochs = 20, n_factors = 20, lr_all = 0.005, reg_all = 0.02)
-            #models.append(svdpp)
-            #models_names.append("SVDpp")
+            models.append(svdpp)
+            models_names.append("SVDpp")
 
-            nmf = NMF(n_epochs = 50, n_factors = 15, reg_bu = 0.06, reg_bi = 0.06)
+            #nmf = NMF(n_epochs = 50, n_factors = 15, reg_bu = 0.06, reg_bi = 0.06)
             #models.append(nmf)
             #models_names.append("NMF")
         elif (calibration_type_value == "6"):
